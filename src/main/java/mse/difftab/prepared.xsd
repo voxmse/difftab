@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schema targetNamespace="http://mse.difftab/prepared" xmlns="http://www.w3.org/2001/XMLSchema" xmlns:diffp="http://mse.difftab/prepared">	
+	<element name="prepared" nillable="false">
+		<complexType>
+			<sequence minOccurs="1" maxOccurs="unbounded">
+				<element name="table">
+					<complexType>
+						<sequence minOccurs="1" maxOccurs="1">
+							<element name="columns">
+								<complexType>
+									<sequence minOccurs="1" maxOccurs="unbounded">
+										<element name="column">
+											<complexType>
+												<attribute name="name" type="string" use="required"></attribute>
+												<attribute name="alias" type="string" use="required"></attribute>
+												<attribute name="jdbcClassName" type="string" use="required"></attribute>
+												<attribute name="hasherClassName" type="string" use="required"></attribute>
+												<attribute name="hashIdx" type="unsignedInt" use="required"></attribute>
+												<attribute name="keyIdx" type="unsignedInt" use="required"></attribute>
+												<attribute name="dataLength" type="unsignedInt" use="required"></attribute>
+											</complexType>
+										</element>
+									</sequence>
+								</complexType>
+							</element>
+							<element name="chunks">
+								<complexType>
+									<sequence minOccurs="1" maxOccurs="unbounded">
+										<element name="chunk">
+											<complexType>
+												<attribute name="fileIdx" type="unsignedInt" use="required"></attribute>
+												<attribute name="begin" type="unsignedLong" use="required"></attribute>
+												<attribute name="end" type="unsignedLong" use="required"></attribute>
+											</complexType>
+										</element>
+									</sequence>
+								</complexType>
+							</element>
+						</sequence>
+						<attribute name="name" type="string" use="required"></attribute>
+						<attribute name="alias" type="string" use="required"></attribute>
+						<attribute name="groupByKey" type="boolean" use="required"></attribute>
+						<attribute name="rows" type="unsignedLong" use="required"></attribute>
+						<attribute name="numberOfFiles" type="unsignedInt" use="required"></attribute>
+					</complexType>
+				</element>
+			</sequence>
+			<attribute name="hashMethod" type="string" use="required"></attribute>
+			<attribute name="idCharset" type="string" use="optional" default="ISO-8859-15"></attribute>
+		</complexType>
+	</element>
+</schema>

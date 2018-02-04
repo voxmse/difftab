@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schema targetNamespace="http://mse.difftab" xmlns="http://www.w3.org/2001/XMLSchema" xmlns:diff="http://mse.difftab">
+	<!-- the root element -->
+	<element name="config" nillable="false">
+		<complexType>
+			<choice minOccurs="1" maxOccurs="unbounded">
+				<!--Use a DB as datasource  -->
+				<element name="sourceDb">
+					<complexType>
+						<sequence>
+							<!--Table's description-->
+							<element name="table" minOccurs="0" maxOccurs="unbounded">
+								<complexType>
+									<sequence>
+										<!-- Use the query's resultset as a "table" contents -->
+										<element name="query" type="string" minOccurs="0" maxOccurs="1"/>
+										<!-- Table's column description -->
+										<element name="column" minOccurs="0" maxOccurs="unbounded">
+											<complexType>
+												<!-- To locate the column'(s) in the database.
+												    For example: nameFilter="FIRST_NAME"
+												    The native DB SQL expression may be used with the star symbol instead of a column name.
+													For example: nameFilter="? LIKE '%AMOUNT%'"
+												-->
+												<attribute name="nameFilter" type="string" use="optional"></attribute>
+
+												<!-- To "rename" the selected column. Case-insensitive(will be transformed to upper case). -->
+												<attribute name="alias" type="string" use="optional"></attribute>
+
+												<!-- Is is a "key" column.The "key" columns' data are serialised and used for the report generation to allow you to identify the concerned row
+												    In addition to it "key" columns may be used for the "group_of_rows" matching comparison mode 
+												-->
+												<attribute name="key" type="boolean" use="optional"></attribute>
+
+												<!-- Is a "comparable" column. You may suppress the data comparison for the selected columns. -->
+												<attribute name="compare" type="boolean" use="optional"	default="true"></attribute>
+											</complexType>
+										</element>
+									</sequence>
+
+									<!-- To locate the table'(s) in the database.
+										For example: nameFilter="MA_TABLE"
+										The native DB SQL expression may be used with the star symbol instead of a table name.
+										For example: nameFilter="? LIKE '%ALL\_%' ESCAPE '\'"
+									-->
+									<attribute name="nameFilter" type="string" use="optional"></attribute>
+
+									<!-- To locate the table'(s) in the database. -->
+									<attribute name="schemaFilter" type="string" use="optional"></attribute>
+
+									<!-- To "rename" the selected table. Case-insensitive(will be transformed to upper case). -->
+									<attribute name="alias" type="string" use="optional"></attribute>
+
+									<!-- Your estimation of number of rows in the table/returned_by_the query. Is used by the app for resource management -->
+									<attribute name="rows" type="unsignedLong" use="optional"></attribute>
+
+									<!-- Is a "comparable" table. You may suppress the data comparison for the selected tables. -->
+									<attribute name="compare" type="boolean" use="optional"	default="true"></attribute>
+
+									<!-- Use the "group_of_key_columns" level comparison instead of row-level one -->
+									<attribute name="groupByKey" type="boolean" use="optional"></attribute>
+								</complexType>
+							</element>
+						</sequence>
+						<!-- Name of datasource -->
+						<attribute name="name" type="token" use="required"></attribute>
+						
+						<!-- URL for a JDBC datasource with a semicolon-separated list of properties
+							The property names "user" and "password" are dedicated to loginname and password respectively.
+						-->
+						<attribute name="connectionUrl" type="string" use="required"></attribute>
+
+						<!-- General schema name for the datasource	-->
+						<attribute name="schema" type="string" use="optional"></attribute>
+
+						<!-- Preffered key type -->
+						<attribute name="preferredKey" use="optional" default="PK">
+							<simpleType>
+								<restriction base="string">
+									<enumeration value="ROWID"/>
+									<enumeration value="PK"/>
+								</restriction>
+							</simpleType>
+						</attribute>
+					</complexType>
+				</element>
+
+				<!--Use a set of preliminary prepared ROW_HASH/ROW_KEY files as a datasource. -->
+				<element name="sourcePrepared">
+					<complexType>
+						<!-- Name of the datasource(directory) -->
+						<attribute name="name" type="token" use="required"></attribute>
+					</complexType>
+				</element>
+			</choice>
+
+			<!-- What to do:
+				Compare data
+				Compare data and do not remove ROW_HASH/ROW_KEY files after execution(may be used as a prepared datasource)
+				Prepare ROW_HASH/ROW_KEY files(prepared datasource) without sorting them
+				Prepare ROW_HASH/ROW_KEY files(prepared datasource)
+				Calculate hash sum(s) for table(s)
+			-->
+			<attribute name="action" use="optional" default="COMPARE">
+				<simpleType>
+					<restriction base="string">
+						<enumeration value="COMPARE"/>
+						<enumeration value="COMPARE_KEEP_FILES"/>						
+						<enumeration value="PREPARE_FILES_NOSORT"/>
+						<enumeration value="PREPARE_FILES_SORT"/>
+						<enumeration value="DISPLAY_HASH_SUM"/>
+					</restriction>
+				</simpleType>
+			</attribute>
+			
+			<!-- Use the "group_of_key_columns" level comparison instead of row-level one -->
+			<attribute name="groupByKey" type="boolean" use="optional" default="true"></attribute>
+			
+			<!-- Calculate and print hash sum -->
+			<attribute name="displayHashSum" type="boolean" use="optional" default="false"></attribute>
+
+			<!-- Use this charset for report generation -->
+			<attribute name="idCharset" type="string" use="optional" default="ISO-8859-15"></attribute>
+
+			<!-- Date format for report generation -->
+			<attribute name="dateFormat" type="string" use="optional" default="dd.MM.yyyy"></attribute>
+
+			<!-- Timestamp format for report generation -->
+			<attribute name="timestampFormat" type="string" use="optional" default="dd.MM.yyyy HH:mm:ss.SSSSSSSSS"></attribute>
+
+			<!-- Time format for report generation -->
+			<attribute name="timeFormat" type="string" use="optional" default="HH:mm:ss.SSSSSSSSS"></attribute>
+
+			<!-- Default number of rows if DB stats do not give us such data -->
+			<attribute name="rows" type="unsignedLong" use="optional" default="1000000"></attribute>
+			
+			<!-- Max size of serialized data of a KEY column. The rest is truncated. -->
+			<attribute name="maxKeyColSize" use="optional" default="255">
+				<simpleType>
+					<restriction base="integer">
+      					<minInclusive value="1"/>
+      					<maxInclusive value="32767"/>
+      				</restriction>
+				</simpleType>
+			</attribute>
+			
+			<!-- Checksum algorithm used for comparison. -->
+			<attribute name="hashMethod" use="optional" default="MD5">
+				<simpleType>
+					<restriction base="string">
+						<enumeration value="MD5" />
+						<enumeration value="SHA-1" />
+						<enumeration value="SHA-256" />
+					</restriction>
+				</simpleType>
+			</attribute>
+			
+			<!-- Read-checksum_calculate buffer queue chunk size. -->
+			<attribute name="queueChunkSize" use="optional" default="1000">
+				<simpleType>
+					<restriction base="integer">
+      					<minInclusive value="1"/>
+      					<maxInclusive value="1000000"/>
+      				</restriction>
+				</simpleType>
+			</attribute>
+			
+			<!-- Max degree of parallelism(limitation of CPU usage). -->
+			<attribute name="parallelDegree" use="optional" default="8">
+				<simpleType>
+					<restriction base="integer">
+      					<minInclusive value="1"/>
+      					<maxInclusive value="1000"/>
+      				</restriction>
+				</simpleType>
+			</attribute>
+			
+			<!-- Read-checksum_calculate buffer queue size. -->
+			<attribute name="hashBuilderQueueSizePerSource" use="optional" default="2">
+				<simpleType>
+					<restriction base="integer">
+      					<minInclusive value="1"/>
+      					<maxInclusive value="100"/>
+      				</restriction>
+				</simpleType>
+			</attribute>
+
+			<!-- Column data separation in reports. -->			
+			<attribute name="logColumnSeparator" type="string" use="optional" default=";"></attribute>
+
+			<!-- How to select tables for comparison.
+				All common tables
+				Common tables present in all given datasources
+			-->
+			<attribute name="scope" use="optional" default="SCHEMA_SELECTED">
+				<simpleType>
+					<restriction base="string">
+						<enumeration value="SCHEMA_COMMON" />
+						<enumeration value="SCHEMA_SELECTED" />
+					</restriction>
+				</simpleType>
+			</attribute>
+			
+			<!-- Enforce the application to generate for each table the given number of ROW_HASH/ROW_KEY prepared files. -->
+			<attribute name="numberOfHashFiles" use="optional">
+				<simpleType>
+					<restriction base="integer">
+      					<minInclusive value="1"/>
+      					<maxInclusive value="1000"/>
+      				</restriction>
+				</simpleType>
+			</attribute>
+		</complexType>
+
+		<!--  Datasource name should be unique  -->
+		<unique name="uniqueNameForSources">
+			<selector xpath="./*"/>
+			<field xpath="@name"/>
+		</unique> 	
+	</element>
+</schema>
