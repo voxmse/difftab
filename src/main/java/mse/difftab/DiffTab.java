@@ -77,7 +77,7 @@ public class DiffTab {
 	};
 	
 	public enum Action {
-		COMPARE, COMPARE_KEEP_FILES, PREPARE_FILES_NOSORT, PREPARE_FILES_SORT, DISPLAY_HASH_SUM
+		COMPARE, COMPARE_KEEP_FILES, PREPARE_FILES_NOSORT, PREPARE_FILES_SORT, DISPLAY_CHECK_SUM
 	};
 
 	
@@ -133,7 +133,7 @@ public class DiffTab {
 			}
 		} catch (Exception e) {
 			System.err.println(e.getMessage());
-//			e.printStackTrace();
+			if(args.length>=3)e.printStackTrace();
 			System.exit(2);
 		}
 	}
@@ -394,7 +394,7 @@ public class DiffTab {
 							hashFile, 
 							keyFile, 
 							tabInfoTree, 
-							Action.valueOf(config.getAction())!=Action.DISPLAY_HASH_SUM, 
+							Action.valueOf(config.getAction())!=Action.DISPLAY_CHECK_SUM, 
 							diffWriter, 
 							trace
 						);
@@ -428,9 +428,9 @@ public class DiffTab {
 								createPreparedConfig(prepared.get(srcName),tabInfoTree.get(srcName).get(tabAlias),tableHashParts,Arrays.asList(cmps).stream().flatMap(cs -> cs.getChunkBoundaries(srcName).stream()).collect(Collectors.toList()));
 				
 						// print hash sum for table
-						if(isDisplayHashSum()) cmps[0].getTableHash().entrySet().stream().sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey())).forEach(e -> displayLog("HashSum:"+e.getKey()+":"+tabAlias+":"+e.getValue()));
+						if(isDisplayCheckSum()) cmps[0].getTableHash().entrySet().stream().sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey())).forEach(e -> displayLog("CheckSum:"+e.getKey()+":"+tabAlias+":"+e.getValue()));
 					
-						if(Action.valueOf(config.getAction())!=Action.DISPLAY_HASH_SUM) {
+						if(Action.valueOf(config.getAction())!=Action.DISPLAY_CHECK_SUM) {
 							for(HashComparator c : cmps) mismatches += c.getMismatches();
 							displayLog(String.valueOf(mismatches) + " mismatches have been detected");
 						}
@@ -439,7 +439,7 @@ public class DiffTab {
 						if (mismatches == 0) Files.delete(getLogFile(tabAlias).toPath());
 				
 						// remove hash files
-						if(Action.valueOf(config.getAction())==Action.COMPARE || Action.valueOf(config.getAction())==Action.DISPLAY_HASH_SUM) {
+						if(Action.valueOf(config.getAction())==Action.COMPARE || Action.valueOf(config.getAction())==Action.DISPLAY_CHECK_SUM) {
 							for(int tableHashPartIdx = 0; tableHashPartIdx < tableHashParts; tableHashPartIdx++) {
 								for(String srcName : tabInfoTree.keySet()) {
 									if(!isPrepared(srcName)) {
@@ -470,8 +470,8 @@ public class DiffTab {
 		}
 	}
 	
-	private boolean isDisplayHashSum(){
-		return config.isDisplayHashSum() || config.getAction().equals(Action.DISPLAY_HASH_SUM.name());
+	private boolean isDisplayCheckSum(){
+		return config.isDisplayCheckSum() || config.getAction().equals(Action.DISPLAY_CHECK_SUM.name());
 	}
 	
 	
@@ -572,13 +572,13 @@ public class DiffTab {
 		}
 		
 		// check for an empty list of tables
-		if (tabs.isEmpty())	throw new ConfigValidationException("Table list is empty for sourceName=\"" + source.getName() + "\"");
+		if (tabs.isEmpty())	throw new ConfigValidationException("Table list is empty for the source \"" + source.getName() + "\"");
 
 		// check for uniqueness of aliases
 		for (TabInfo tab1 : tabs)
 			for (TabInfo tab2 : tabs)
 				if (tab1.alias.equals(tab2.alias) && tab1 != tab2)
-					throw new ConfigValidationException("The same alias is used for sourceName=\"" + source.getName()	+ "\" and tables " + tab1.fullName + " and " + tab2.fullName);
+					throw new ConfigValidationException("The same alias is used for the source \"" + source.getName()	+ "\" and tables " + tab1.fullName + " and " + tab2.fullName);
 
 		return tabs.stream().collect(Collectors.toMap(ti -> ti.alias, ti -> ti, (oldValue, newValue) -> oldValue));
 	}
@@ -607,9 +607,6 @@ public class DiffTab {
 		
 		// for each table
 		for(Prepared.Table tab : prepared.getTable()) {
-			if(isDisplayHashSum() && tab.isGroupByKey())
-				throw new ConfigValidationException("The action=DISPLAY_HASH_SUM mode is not compatible with groupByKey=\"true\" for the \""+sourcePrepared.getName()+"\" prepared source's configuration");
-
 			TabInfo ti = new TabInfo();
 			ti.alias = tab.getAlias();
 			ti.dbName = tab.getName();
@@ -951,6 +948,14 @@ public class DiffTab {
 						throw new ConfigValidationException("sourceName=\"" + sourceName + "\":the table with alias \"" + commonTabAlias + "\" is not found");
 		}
 
+		// check groupByKey and table checksum calculation
+		if(isDisplayCheckSum())
+			for(String commonTabAlias : commonTabs)
+				for(String srcName : tabInfoTree.keySet())
+					if(tabInfoTree.get(srcName).get(commonTabAlias).groupByKey)
+						throw new ConfigValidationException("The table's checksum calculation is not compatible with groupByKey=\"true\" for the \""+commonTabAlias+"\" table in the \""+srcName+"\" data source");
+
+		
 		// check the same value of groupByKey
 		for(String commonTabAlias : commonTabs) {
 			if(tabInfoTree.keySet().stream().filter(sourceName -> tabInfoTree.get(sourceName).get(commonTabAlias).groupByKey).count() % tabInfoTree.size() != 0)
@@ -1042,7 +1047,7 @@ public class DiffTab {
 			}
 			
 			// key columns' serialization is not necessary for a table's hash sum calculation 
-			if(Action.valueOf(config.getAction())==Action.DISPLAY_HASH_SUM) {
+			if(Action.valueOf(config.getAction())==Action.DISPLAY_CHECK_SUM) {
 				for(String colAlias : tabInfoTree.get(firstSourceName).get(commonTabAlias).columns.entrySet().stream().filter(el -> el.getValue().keyIdx > 0).map(el -> el.getKey()).sorted().collect(Collectors.toList()))
 					for(String srcName : tabInfoTree.keySet())
 						if(!isPrepared(tabInfoTree.get(srcName).get(commonTabAlias)))
@@ -1177,7 +1182,7 @@ public class DiffTab {
 	 */
 	int getNumberOfHashFiles(String tabAlias, Map<String,Map<String,TabInfo>> tabInfoTree) {
 		// one file in case of table's hash sum calculation
-		if(isDisplayHashSum()) return 1;
+		if(isDisplayCheckSum()) return 1;
 		
 		// if a prepared data source is used then return number of files used for it
 		int numberOfHashFilesInPreparedDataSources = tabInfoTree.values().stream().map(t -> t.get(tabAlias)).filter(ti -> isPrepared(ti)).mapToInt(ti -> (int)ti.prepared.getNumberOfFiles()).findAny().orElse(0);
@@ -1378,13 +1383,15 @@ public class DiffTab {
 			t.getColumns().getColumn().add(c);
 		}
 		if(chunks != null) {
-			t.setChunks(new Prepared.Table.Chunks());
-			for(HashAggregator.ChunkBoundaries2 chunk : chunks){
-				Prepared.Table.Chunks.Chunk preparedChunk = new Prepared.Table.Chunks.Chunk();
-				preparedChunk.setBegin(BigInteger.valueOf(chunk.head));
-				preparedChunk.setEnd(BigInteger.valueOf(chunk.tail));			
-				preparedChunk.setFileIdx(chunk.fileIdx);
-				t.getChunks().getChunk().add(preparedChunk);
+			if(!chunks.isEmpty()){
+				t.setChunks(new Prepared.Table.Chunks());
+				for(HashAggregator.ChunkBoundaries2 chunk : chunks){
+					Prepared.Table.Chunks.Chunk preparedChunk = new Prepared.Table.Chunks.Chunk();
+					preparedChunk.setBegin(BigInteger.valueOf(chunk.head));
+					preparedChunk.setEnd(BigInteger.valueOf(chunk.tail));			
+					preparedChunk.setFileIdx(chunk.fileIdx);
+					t.getChunks().getChunk().add(preparedChunk);
+				}
 			}
 		}
 		prepared.getTable().add(t);

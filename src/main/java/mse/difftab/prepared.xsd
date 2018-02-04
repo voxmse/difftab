@@ -23,7 +23,7 @@
 									</sequence>
 								</complexType>
 							</element>
-							<element name="chunks">
+							<element name="chunks" minOccurs="0" maxOccurs="1" >
 								<complexType>
 									<sequence minOccurs="1" maxOccurs="unbounded">
 										<element name="chunk">

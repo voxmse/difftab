@@ -9,6 +9,7 @@ import java.sql.Statement;
 import java.util.List;
 import java.util.ArrayList;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 
 
 public class CSVDRIVER implements Adapter {
@@ -50,12 +51,13 @@ public class CSVDRIVER implements Adapter {
 		ResultSet rs=null;
 
 		nameFilter=nameFilter==null?"":nameFilter.trim();
-		String query="SELECT * FROM "+table+" LIMIT 0";
+		String query="SELECT * FROM "+table/*+" LIMIT 0"*/;
 
 		try{
 			rs=st.executeQuery(query);
-			for(int i=1;i<=rs.getMetaData().getColumnCount();i++){
-				if(nameFilter.isEmpty()||nameFilter.equalsIgnoreCase(rs.getMetaData().getColumnName(i))){
+			ResultSetMetaData md = rs.getMetaData();
+			for(int i=1;i<=md.getColumnCount();i++){
+				if(nameFilter.isEmpty()||nameFilter.equalsIgnoreCase(md.getColumnName(i))){
 					ColInfo ci=new ColInfo();
 					ci.dbName=rs.getMetaData().getColumnName(i);
 					ci.fullName=ci.dbName;

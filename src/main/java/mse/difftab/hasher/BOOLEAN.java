@@ -5,12 +5,7 @@ import mse.difftab.Hasher;
 
 
 public class BOOLEAN extends Hasher {
-	byte[] buff;
-	
-	public BOOLEAN(){
-		super();
-		buff=new byte[]{0x0,0x1};
-	}
+	byte[] buff=new byte[]{0x0,0x1};
 
 	@Override
 	protected boolean getDataIsSupported(){

@@ -109,7 +109,7 @@ public class HashComparator extends Thread {
 			
 			//define and sort partitions
 			int chunks;
-			if(tabInfoTree.get(srcName[srcIdx]).get(tabAlias).prepared == null || tabInfoTree.get(srcName[srcIdx]).get(tabAlias).prepared.getChunks().getChunk().isEmpty()) {
+			if(tabInfoTree.get(srcName[srcIdx]).get(tabAlias).prepared == null || tabInfoTree.get(srcName[srcIdx]).get(tabAlias).prepared.getChunks()==null) {
 				chunks=(int)Math.ceil((double)hashFile[srcIdx].length()/sortBuffer[0].length);
 				partWithMin=new boolean[chunks];
 				chunk=new ChunkBoundaries[chunks];

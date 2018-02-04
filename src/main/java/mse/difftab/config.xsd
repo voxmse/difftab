@@ -99,7 +99,7 @@
 				Compare data and do not remove ROW_HASH/ROW_KEY files after execution(may be used as a prepared datasource)
 				Prepare ROW_HASH/ROW_KEY files(prepared datasource) without sorting them
 				Prepare ROW_HASH/ROW_KEY files(prepared datasource)
-				Calculate hash sum(s) for table(s)
+				Calculate check sum(s) for table(s)
 			-->
 			<attribute name="action" use="optional" default="COMPARE">
 				<simpleType>
@@ -108,16 +108,16 @@
 						<enumeration value="COMPARE_KEEP_FILES"/>						
 						<enumeration value="PREPARE_FILES_NOSORT"/>
 						<enumeration value="PREPARE_FILES_SORT"/>
-						<enumeration value="DISPLAY_HASH_SUM"/>
+						<enumeration value="DISPLAY_CHECK_SUM"/>
 					</restriction>
 				</simpleType>
 			</attribute>
 			
 			<!-- Use the "group_of_key_columns" level comparison instead of row-level one -->
-			<attribute name="groupByKey" type="boolean" use="optional" default="true"></attribute>
+			<attribute name="groupByKey" type="boolean" use="optional" default="false"></attribute>
 			
-			<!-- Calculate and print hash sum -->
-			<attribute name="displayHashSum" type="boolean" use="optional" default="false"></attribute>
+			<!-- Calculate and print check sum -->
+			<attribute name="displayCheckSum" type="boolean" use="optional" default="false"></attribute>
 
 			<!-- Use this charset for report generation -->
 			<attribute name="idCharset" type="string" use="optional" default="ISO-8859-15"></attribute>

@@ -6,13 +6,8 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 
 public class DATE extends Hasher {
-	private DateTimeFormatter f;
+	private DateTimeFormatter f=DateTimeFormatter.ofPattern(dateFormat).withZone(ZoneOffset.UTC);
 	private byte[] buff = new byte[12];
-	
-	protected DATE(){
-		super();
-		f=DateTimeFormatter.ofPattern(dateFormat).withZone(ZoneOffset.UTC);
-	}
 	
 	@Override
 	protected boolean getDataIsSupported(){

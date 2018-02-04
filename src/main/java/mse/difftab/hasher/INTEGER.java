@@ -1,11 +1,8 @@
 package mse.difftab.hasher;
 
-
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
-
 import mse.difftab.Hasher;
-
 
 public class INTEGER extends Hasher {
 	@Override
