@@ -33,6 +33,7 @@ import java.sql.Driver;
 import java.sql.DriverManager;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -291,9 +292,8 @@ public class DiffTab {
 			// read defaults
 			// scope
 			Scope scope = Enum.valueOf(Scope.class, config.getScope());
-			// rows in table by default
-			long rowsDefault = config.getRows().longValue();
-			// groupByKey by default
+			long rowsDefault = config.getRows();
+			long loggedMismatchesMaxDefault = config.getLoggedMismatchesMax();
 			boolean groupByKeyDefault = config.isGroupByKey();
 
 			// get tables
@@ -317,6 +317,7 @@ public class DiffTab {
 							adapter.get(sourceDb.getName()),
 							scope,
 							rowsDefault,
+							loggedMismatchesMaxDefault,
 							groupByKeyDefault
 						)
 					);
@@ -378,7 +379,7 @@ public class DiffTab {
 
 					// prepare compare
 					HashComparator[] cmps = new HashComparator[tableHashParts];
-					long mismatches = 0;
+					SharedValueLong mismatches = new SharedValueLong();
 					for(int tableHashPartIdx = 0; tableHashPartIdx < tableHashParts; tableHashPartIdx++) {
 						// prepare information about source files
 						Map<String, File> hashFile = new HashMap<String, File>();
@@ -394,7 +395,9 @@ public class DiffTab {
 							hashFile, 
 							keyFile, 
 							tabInfoTree, 
-							Action.valueOf(config.getAction())!=Action.DISPLAY_CHECK_SUM, 
+							Action.valueOf(config.getAction())!=Action.DISPLAY_CHECK_SUM,
+							mismatches,
+							loggedMismatchesMaxDefault,
 							diffWriter, 
 							trace
 						);
@@ -431,12 +434,11 @@ public class DiffTab {
 						if(isDisplayCheckSum()) cmps[0].getTableHash().entrySet().stream().sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey())).forEach(e -> displayLog("CheckSum:"+e.getKey()+":"+tabAlias+":"+e.getValue()));
 					
 						if(Action.valueOf(config.getAction())!=Action.DISPLAY_CHECK_SUM) {
-							for(HashComparator c : cmps) mismatches += c.getMismatches();
-							displayLog(String.valueOf(mismatches) + " mismatches have been detected");
+							displayLog(String.valueOf(mismatches.value) + " mismatches have been detected");
 						}
 						diffWriter.close();
 						
-						if (mismatches == 0) Files.delete(getLogFile(tabAlias).toPath());
+						if (mismatches.value == 0) Files.delete(getLogFile(tabAlias).toPath());
 				
 						// remove hash files
 						if(Action.valueOf(config.getAction())==Action.COMPARE || Action.valueOf(config.getAction())==Action.DISPLAY_CHECK_SUM) {
@@ -483,7 +485,8 @@ public class DiffTab {
 	 */
 	private void normalizeTabInfo(
 		List<TabInfo> tabs, 
-		long rowsDefault, 
+		long rowsDefault,
+		long loggedMismatchesMaxDefault,
 		boolean groupByKeyDefault
 	) {
 		for(TabInfo ti : tabs) {
@@ -499,7 +502,8 @@ public class DiffTab {
 			Connection conn, 
 			Adapter adapter,
 			Scope scope, 
-			long rowsDefault, 
+			long rowsDefault,
+			long loggedMismatchesMaxDefault,
 			boolean groupByKeyDefault
 	) throws Exception {
 		List<TabInfo> tabs = null;
@@ -510,7 +514,7 @@ public class DiffTab {
 			case SCHEMA_COMMON:
 				// load table info for the whole schema
 				tabs = adapter.getTables(conn, source.getSchema(), null);
-				normalizeTabInfo(tabs, rowsDefault, groupByKeyDefault);
+				normalizeTabInfo(tabs, rowsDefault, loggedMismatchesMaxDefault, groupByKeyDefault);
 				break;
 			case SCHEMA_SELECTED:
 				// empty list of tables
@@ -528,7 +532,7 @@ public class DiffTab {
 					tabConf.getSchemaFilter() == null ? source.getSchema() : tabConf.getSchemaFilter(),
 					tabConf.getNameFilter()
 				);
-				normalizeTabInfo(tabs2, rowsDefault, groupByKeyDefault);
+				normalizeTabInfo(tabs2, rowsDefault, loggedMismatchesMaxDefault, groupByKeyDefault);
 				
 				// list of names of tables loaded from the DB
 				final Set<String> tabs2_ = tabs2.stream().map(ti -> ti.fullName).collect(Collectors.toSet());
@@ -1080,7 +1084,7 @@ public class DiffTab {
 		Map<String,OutputStream[]> hashStreamK = new HashMap<String,OutputStream[]>();
 		Map<String,SharedValueLong[]> keyFilePos = new HashMap<String,SharedValueLong[]>();
 		Map<String,DataReader> reader = new HashMap<String,DataReader>();
-
+		
 		//  number of pairs(H,K) of hash files per source
 		int hashStreamsNum = getNumberOfHashFiles(tabAlias,tabInfoTree);
 		// N of hash builders
@@ -1098,7 +1102,7 @@ public class DiffTab {
 		if(dbSources.isEmpty()) return hashStreamsNum;			
 		
 		try {
-			// execute SELECT statements
+			// prepare execution of SELECT statements
 			for(String srcName : dbSources) {
 				stmt.put(srcName, conn.get(srcName).prepareStatement(tabInfoTree.get(srcName).get(tabAlias).query));
 				sqlExec.put(srcName, new SqlQueryExcutor(srcName, this, stmt.get(srcName)));
@@ -1107,6 +1111,10 @@ public class DiffTab {
 			// start executors
 			sqlExec.values().forEach(ex -> ex.start());
 
+			// add shutdown hook to cancel execution of SELECT queries and close connections in case of Ctrl-C
+			Thread shutdownHook = new ShutdownHook(stmt.values());
+			Runtime.getRuntime().addShutdownHook(shutdownHook);
+			
 			// wait till the execution is finished or a failure
 			while (true) {
 				// if failure then cancel all executions and exit
@@ -1163,6 +1171,9 @@ public class DiffTab {
 			    registerFailure(e);
 			}
 
+			// remove shutdown hook
+			Runtime.getRuntime().removeShutdownHook(shutdownHook);
+			
 			return checkFailure() ? hashStreamsNum : 0;
 		}finally {
 			stmt.values().forEach(s -> {try{s.close();}catch(Exception e){}});
@@ -1405,6 +1416,25 @@ public class DiffTab {
 			File xmlFile = getFile(ContentType.PREPARED_CONFIG,srcName,null,0);
 			if(xmlFile.exists()) Files.delete(xmlFile.toPath());
 			jaxbMarshaller.marshal(prepared.get(srcName), xmlFile);
+		}
+	}
+	
+	private class ShutdownHook extends Thread {
+		private Collection<PreparedStatement> pss;
+		ShutdownHook(Collection<PreparedStatement> pss) {
+			this.pss=pss;
+		}
+		public void run() {
+			for(PreparedStatement ps : pss) {
+				try {
+					ps.cancel();
+				}catch(Exception e) {
+				}
+				try {
+					ps.getConnection().close();
+				}catch(Exception e) {
+				}
+			}
 		}
 	}
 }

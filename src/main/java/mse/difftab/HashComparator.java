@@ -36,7 +36,8 @@ public class HashComparator extends Thread {
 	private BufferedWriter logWriter;
 	private boolean doCompare;
 	private int[] keys;
-	private long mismatches;
+	private SharedValueLong mismatches;
+	private long loggedMismatchesMax;
 	private int trace;
 	private String logColumnSeparator;
 	private final int HASH_RECORD_SIZE;
@@ -952,6 +953,8 @@ public class HashComparator extends Thread {
 		Map<String,File> keyFile,
 		Map<String,Map<String,TabInfo>> tabInfoTree,
 		boolean doCompare,
+		SharedValueLong mismatches,
+		long loggedMismatchesMax,
 		BufferedWriter logFile,
 		int trace
 	)throws Exception{
@@ -980,7 +983,8 @@ public class HashComparator extends Thread {
 		this.keys=new int[this.hashFile.length];
 		for(i=0;i<this.hashFile.length;i++) this.keys[i]=getKeyCount(this.tabInfoTree.get(srcName[0]).get(tabAlias));
 		this.agg=new HashAggregator[this.hashFile.length];
-		this.mismatches=0;
+		this.mismatches=mismatches;
+		this.loggedMismatchesMax = loggedMismatchesMax;
 		this.trace=trace;
 		this.md = Hasher.getMessageDigestInstance();
 	}
@@ -1200,23 +1204,24 @@ public class HashComparator extends Thread {
 	}
 	
 	private synchronized void logDiff(char why,HashAggregator[] agg,boolean[] aggWithMin,byte[] keyBuff,StringBuilder keyBuffVal)throws Exception{
-		logWriter.append(why+logColumnSeparator);
-		for(int i=0;i<agg.length;i++){
-			if(aggWithMin[i]){
-				getKeyVal(keys[i],keyFile[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
-				logWriter.append(
+		if(++mismatches.value<=loggedMismatchesMax) {
+			logWriter.append(why+logColumnSeparator);
+			for(int i=0;i<agg.length;i++){
+				if(aggWithMin[i]){
+					getKeyVal(keys[i],keyFile[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
+					logWriter.append(
 						keyBuffVal.toString()+
 						logColumnSeparator+
 						agg[i].groupCntTotal+
 						logColumnSeparator+
 						(groupByKey?String.valueOf(agg[i].dataHashId)+logColumnSeparator:"")
 					);
-			}else{
-				logWriter.append(logColumnSeparator+logColumnSeparator+(groupByKey?logColumnSeparator:""));
+				}else{
+					logWriter.append(logColumnSeparator+logColumnSeparator+(groupByKey?logColumnSeparator:""));
+				}
 			}
 		}
 		logWriter.newLine();
-		this.mismatches++;
 	}
     
 	private void getKeyVal(int keys,File keyFile,long offset,byte[] buff,StringBuilder keyVal)throws Exception{
@@ -1270,10 +1275,6 @@ public class HashComparator extends Thread {
 		}else{
 			throw new RuntimeException("Can not allocate memory buffers for compare");
 		}
-	}
-	
-	public long getMismatches(){
-		return mismatches;
 	}
 	
 	public Map<String,String> getTableHash(){

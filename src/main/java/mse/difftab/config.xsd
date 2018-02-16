@@ -132,8 +132,25 @@
 			<attribute name="timeFormat" type="string" use="optional" default="HH:mm:ss.SSSSSSSSS"></attribute>
 
 			<!-- Default number of rows if DB stats do not give us such data -->
-			<attribute name="rows" type="unsignedLong" use="optional" default="1000000"></attribute>
+			<attribute name="rows" use="optional" default="1000000">
+				<simpleType>
+					<restriction base="long">
+      					<minInclusive value="0"/>
+      					<maxInclusive value="9223372036854775807"/>
+      				</restriction>
+				</simpleType>
+			</attribute>
 			
+			<!-- How many mismatches may be logged -->
+			<attribute name="loggedMismatchesMax" use="optional" default="9223372036854775807">
+				<simpleType>
+					<restriction base="long">
+      					<minInclusive value="0"/>
+      					<maxInclusive value="9223372036854775807"/>
+      				</restriction>
+				</simpleType>
+			</attribute>
+
 			<!-- Max size of serialized data of a KEY column. The rest is truncated. -->
 			<attribute name="maxKeyColSize" use="optional" default="255">
 				<simpleType>
@@ -210,6 +227,7 @@
       				</restriction>
 				</simpleType>
 			</attribute>
+			
 		</complexType>
 
 		<!--  Datasource name should be unique  -->
