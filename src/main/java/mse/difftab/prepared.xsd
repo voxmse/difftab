@@ -17,7 +17,6 @@
 												<attribute name="hasherClassName" type="string" use="required"></attribute>
 												<attribute name="hashIdx" type="unsignedInt" use="required"></attribute>
 												<attribute name="keyIdx" type="unsignedInt" use="required"></attribute>
-												<attribute name="dataLength" type="unsignedInt" use="required"></attribute>
 											</complexType>
 										</element>
 									</sequence>
@@ -47,6 +46,9 @@
 			</sequence>
 			<attribute name="hashMethod" type="string" use="required"></attribute>
 			<attribute name="idCharset" type="string" use="optional" default="ISO-8859-15"></attribute>
+			<attribute name="TreatNoSuchColumnAsNull" type="boolean" use="optional" default="false"></attribute>
+			<attribute name="TreatEmptyAsNull" type="boolean" use="optional" default="false"></attribute>
+			<attribute name="NullIsTypeless" type="boolean" use="optional" default="true"></attribute>
 		</complexType>
 	</element>
 </schema>

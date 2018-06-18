@@ -3,6 +3,7 @@
 	<name>difftab</name>
 	<comment></comment>
 	<projects>
+		<project>difftab.jdbc.mongo</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>

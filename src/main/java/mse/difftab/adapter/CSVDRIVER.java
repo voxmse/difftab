@@ -7,6 +7,7 @@ import mse.difftab.ConfigValidationException;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.List;
+import java.util.stream.Collectors;
 import java.util.ArrayList;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -59,8 +60,14 @@ public class CSVDRIVER implements Adapter {
 			for(int i=1;i<=md.getColumnCount();i++){
 				if(nameFilter.isEmpty()||nameFilter.equalsIgnoreCase(md.getColumnName(i))){
 					ColInfo ci=new ColInfo();
+					ci.colIdx = i;
 					ci.dbName=rs.getMetaData().getColumnName(i);
 					ci.fullName=ci.dbName;
+					ci.alias = ci.dbName.toUpperCase();
+					ci.hashIdx = 1;
+					ci.keyIdx = 0;
+					ci.jdbcClassName = md.getColumnClassName(i);
+					ci.confSrcTabColIdx = -1;
 					cols.add(ci);
 				}
 			}
@@ -70,5 +77,53 @@ public class CSVDRIVER implements Adapter {
 			try{st.close();}catch(Exception e){}
 		}
 		return cols;
+	}
+
+	@Override
+	public boolean ColumnSetAndDataTypesAreFixed() {
+		return true;
+	}
+	
+	@Override
+	public String getQuery(Connection conn, String schema, String table, List<ColInfo> columns){
+		if(columns==null || columns.isEmpty()){
+			return "SELECT * FROM "+table;
+		}else{
+			return "SELECT "+columns.stream().filter(ci -> ci.hashIdx>0 || ci.keyIdx>0).map(ci -> ci.fullName).collect(Collectors.joining(","))+" FROM "+table;
+		}
+	}
+	
+	@Override
+	public List<ColInfo> getColumns(Connection conn,String query)throws Exception{
+		Statement st = null;
+		ResultSet rs = null;
+		ResultSetMetaData md = null;
+		List<ColInfo> columns = new ArrayList<ColInfo>();
+		
+		try {
+			// get columns' metadata
+			st=conn.createStatement();
+			rs=st.executeQuery(query);
+			md = rs.getMetaData();
+
+			// get columns' data
+			for (int i = 1; i <= md.getColumnCount(); i++) {
+				ColInfo col = new ColInfo();
+				col.colIdx = i;
+				col.dbName = md.getColumnName(i);
+				col.fullName = col.dbName;
+				col.alias = col.dbName.toUpperCase();
+				col.hashIdx = 1;
+				col.keyIdx = 0;
+				col.jdbcClassName = md.getColumnClassName(i);
+				col.confSrcTabColIdx = -1;
+				columns.add(col);
+			}
+			
+			return columns;
+		} finally {
+			try{rs.close();}catch(Exception e){}
+			try{st.close();}catch(Exception e){}
+		}		
 	}
 }

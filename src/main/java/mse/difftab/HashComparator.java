@@ -40,6 +40,12 @@ public class HashComparator extends Thread {
 	private long loggedMismatchesMax;
 	private int trace;
 	private String logColumnSeparator;
+	private String logKeyValueSeparator;
+	private String logKeyValueEnclosedBy;
+	private boolean logPrintHeader;
+	private String nullValueIndicator;
+	private String noSuchColumnIndicator;
+	private String noDataSerializerIndicator;
 	private final int HASH_RECORD_SIZE;
 	private final int KEY_HASH_LENGTH;
 	private final int DATA_HASH_LENGTH;
@@ -101,12 +107,12 @@ public class HashComparator extends Thread {
 			this.rowsTotal=hashFile[srcIdx].length()/HASH_RECORD_SIZE;
 			
 			keyHashBuf=new byte[KEY_HASH_LENGTH];
-			System.arraycopy(Hasher.HASH_INITIAL,0,keyHashBuf,0,KEY_HASH_LENGTH);
+//			System.arraycopy(Hasher.HASH_INITIAL,0,keyHashBuf,0,KEY_HASH_LENGTH);
 			dataHashBuf=new byte[(DATA_HASH_LENGTH+DATA_HASH_LENGTH+8)*2];
 			dataHashBufOffset=0;
 			tableHashBuf=new byte[(KEY_HASH_LENGTH+KEY_HASH_LENGTH+8)*2];
 			tableHashBufOffset=0;
-			System.arraycopy(Hasher.HASH_INITIAL,0,tableHashBuf,0,KEY_HASH_LENGTH);
+//			System.arraycopy(Hasher.HASH_INITIAL,0,tableHashBuf,0,KEY_HASH_LENGTH);
 			
 			//define and sort partitions
 			int chunks;
@@ -169,7 +175,7 @@ public class HashComparator extends Thread {
 			if(trace>0){
 				currTs=System.currentTimeMillis();
 				if(((currTs-lastTs)>=trace) || force){
-					app.writeLog("compare:"+tablePartIdx+":"+(rowsTotal-getNotProcessedRowsCount())+" of "+rowsTotal+" rows,"+mismatches+" mismatches were detected");
+					app.writeLog("compare:"+tablePartIdx+":"+(rowsTotal-getNotProcessedRowsCount())+" of "+rowsTotal+" rows,"+mismatches.value+" mismatches were detected");
 					lastTs=currTs;
 				}
 			}
@@ -972,8 +978,14 @@ public class HashComparator extends Thread {
 			this.keyFile[i]=keyFile.get(s);
 			i++;
 		}
-		this.groupByKey=tabInfoTree.get(srcName[0]).get(tabAlias).groupByKey; 
-		this.logColumnSeparator=app.config.getLogColumnSeparator();
+		this.groupByKey = tabInfoTree.get(srcName[0]).get(tabAlias).groupByKey; 
+		this.logColumnSeparator = app.config.getLogColumnSeparator();
+		this.logKeyValueSeparator = app.config.getLogKeyValueSeparator();
+		this.logKeyValueEnclosedBy = app.config.getLogKeyValueEnclosedBy();
+		this.logPrintHeader = app.config.isLogPrintHeader();
+		this.nullValueIndicator = app.config.getNullValueIndicator();
+		this.noSuchColumnIndicator = app.config.getNoSuchColumnIndicator();
+		this.noDataSerializerIndicator = app.config.getNoDataSerializerIndicator();
 		this.KEY_HASH_LENGTH=Hasher.HASH_LENGTH;
 		this.DATA_HASH_LENGTH=this.groupByKey?Hasher.HASH_LENGTH:0;
 		this.HASH_LENGTH=this.KEY_HASH_LENGTH+this.DATA_HASH_LENGTH;
@@ -1193,32 +1205,53 @@ public class HashComparator extends Thread {
 	}
 	
 	protected void logDiffInit() throws Exception{
-		logWriter.write("type"+logColumnSeparator);
-		for(int i=0;i<srcName.length;i++){
-			logWriter.write("\""+srcName[i]+"\""+(logColumnSeparator.equals(":")?"->":":")+getKeyList(tabInfoTree.get(srcName[i]).get(tabAlias))+logColumnSeparator+"count"+logColumnSeparator);
-			if(groupByKey){
-				logWriter.write("hashIdx"+logColumnSeparator);
+		if(logPrintHeader) {
+			if(groupByKey) {
+				logWriter.write("type"+logColumnSeparator+getKeyAliasList(tabInfoTree.get(srcName[0]).get(tabAlias))+logColumnSeparator);
+				for(int i=0;i<srcName.length;i++)
+					logWriter.write(logKeyValueEnclosedBy+srcName[i]+logKeyValueEnclosedBy+ " count"+logColumnSeparator+"hashIdx"+logColumnSeparator);
+			}else{
+				logWriter.write("type"+logColumnSeparator);
+				for(int i=0;i<srcName.length;i++){
+					logWriter.write(logKeyValueEnclosedBy+srcName[i]+logKeyValueEnclosedBy+logKeyValueSeparator+getKeyList(tabInfoTree.get(srcName[i]).get(tabAlias))+logColumnSeparator+"count"+logColumnSeparator);
+				}
 			}
+			logWriter.newLine();
 		}
-		logWriter.newLine();
 	}
 	
 	private synchronized void logDiff(char why,HashAggregator[] agg,boolean[] aggWithMin,byte[] keyBuff,StringBuilder keyBuffVal)throws Exception{
+		int i;
 		if(++mismatches.value<=loggedMismatchesMax) {
-			logWriter.append(why+logColumnSeparator);
-			for(int i=0;i<agg.length;i++){
-				if(aggWithMin[i]){
-					getKeyVal(keys[i],keyFile[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
-					logWriter.append(
-						keyBuffVal.toString()+
-						logColumnSeparator+
-						agg[i].groupCntTotal+
-						logColumnSeparator+
-						(groupByKey?String.valueOf(agg[i].dataHashId)+logColumnSeparator:"")
-					);
-				}else{
-					logWriter.append(logColumnSeparator+logColumnSeparator+(groupByKey?logColumnSeparator:""));
+			if(groupByKey) {
+				logWriter.append(why+logColumnSeparator);
+				for(i=0;i<agg.length;i++)
+					if(aggWithMin[i]) {
+						getKeyVal(keys[i],keyFile[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
+						logWriter.append(keyBuffVal.toString()+logColumnSeparator);
+						break;
+					}
+				for(i=0;i<agg.length;i++){
+					if(aggWithMin[i]) {
+						logWriter.append(agg[i].groupCntTotal+logColumnSeparator+String.valueOf(agg[i].dataHashId)+logColumnSeparator);
+					}else{
+						logWriter.append(logColumnSeparator+logColumnSeparator);
+					}
 				}
+			}else{
+				logWriter.append(why+logColumnSeparator);
+				for(i=0;i<agg.length;i++)
+					if(aggWithMin[i]){
+						getKeyVal(keys[i],keyFile[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
+						logWriter.append(
+							keyBuffVal.toString()+
+							logColumnSeparator+
+							agg[i].groupCntTotal+
+							logColumnSeparator
+						);
+					}else{
+						logWriter.append(logColumnSeparator+logColumnSeparator);
+					}
 			}
 		}
 		logWriter.newLine();
@@ -1236,35 +1269,50 @@ public class HashComparator extends Thread {
 		keyVal.setLength(0);
 		int pos=0;
 		for(int i=0;i<keys;i++){
-			if(keyVal.length()>0) keyVal.append(logColumnSeparator.equals(",")?":":",");
+			if(keyVal.length()>0) keyVal.append(logKeyValueSeparator);
 			if((buff[pos]>>7)==0){
-				if(buff[pos]==(byte)0x7f){
-					keyVal.append("NULL");
-					pos++;
-				}else{
-					keyVal.append("\"");
-					keyVal.append(new String(buff,pos+1,buff[pos],Hasher.idCharset));
-					keyVal.append("\"");
-					pos+=buff[pos]+1;
+				switch(buff[pos]) {
+					case Hasher.DATA_LEN_TO_WRITE_FOR_NULL:
+						keyVal.append(nullValueIndicator);
+						pos++;
+						break;
+					case Hasher.DATA_LEN_TO_WRITE_FOR_NO_COLUMN:
+						keyVal.append(noSuchColumnIndicator);
+						pos++;
+						break;
+					case Hasher.DATA_LEN_TO_WRITE_FOR_NO_SERIALIZER:
+						keyVal.append(noDataSerializerIndicator);
+						pos++;
+						break;
+					default:
+						keyVal.append(logKeyValueEnclosedBy);
+						keyVal.append(new String(buff,pos+1,buff[pos],Hasher.idCharset));
+						keyVal.append(logKeyValueEnclosedBy);
+						pos+=buff[pos]+1;
 				}
 			}else{
-				keyVal.append("\"");
+				keyVal.append(logKeyValueEnclosedBy);
 				keyVal.append(new String(buff,pos+2,((buff[pos]<<25)>>17)|buff[pos+1],Hasher.idCharset));
-				keyVal.append("\"");
+				keyVal.append(logKeyValueEnclosedBy);
 				pos+=((buff[pos]<<25)>>17)|buff[pos+1]+2;
 			}
 		}
 	}
 	
 	private int getKeyValBuffSize(TabInfo ti){
-		return ti.columns.values().stream().filter(ci -> ci.keyIdx > 0).mapToInt(ci -> Math.max(5,ci.dataLength+3)).sum()-1;
+		return ti.columns.values().stream().filter(ci -> ci.keyIdx > 0).mapToInt(ci -> Math.max(5,app.getMaxKeyColSize()+3)).sum()-1;
 	}
 
 	private String getKeyList(TabInfo ti){
-		String s = ti.columns.values().stream().filter(ci -> ci.keyIdx > 0).sorted((ci1,ci2) -> Integer.compare(ci1.keyIdx,ci2.keyIdx)).map(ci -> ci.dbName).reduce("",(a,b) -> a + (logColumnSeparator.equals(",")?":":",") + "\"" + b + "\"");
-		return s.length()>1?s.substring(1):"";
+		String s = ti.columns.values().stream().filter(ci -> ci.keyIdx > 0).sorted((ci1,ci2) -> ci1.alias.compareTo(ci2.alias)).map(ci -> ci.dbName).reduce("",(a,b) -> a + logKeyValueSeparator + logKeyValueEnclosedBy + b + logKeyValueEnclosedBy);
+		return s.length()>1?s.substring(logKeyValueSeparator.length()):"";
 	}
 
+	private String getKeyAliasList(TabInfo ti){
+		String s = ti.columns.values().stream().filter(ci -> ci.keyIdx > 0).sorted((ci1,ci2) -> ci1.alias.compareTo(ci2.alias)).map(ci -> ci.alias).reduce("",(a,b) -> a + logKeyValueSeparator + logKeyValueEnclosedBy + b + logKeyValueEnclosedBy);
+		return s.length()>1?s.substring(logKeyValueSeparator.length()):"";
+	}
+	
 	private int getKeyCount(TabInfo ti){
 		return (int)ti.columns.values().stream().filter(ci -> ci.keyIdx > 0).count();
 	}

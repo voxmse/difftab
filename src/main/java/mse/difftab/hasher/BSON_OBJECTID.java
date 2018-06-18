@@ -1,65 +1,72 @@
 package mse.difftab.hasher;
 
 import mse.difftab.Hasher;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 
-public class TIMESTAMP extends Hasher {
-	private	DateTimeFormatter f=DateTimeFormatter.ofPattern(timestampFormat).withZone(ZoneOffset.UTC);
-	private byte[] buff = new byte[12];
-
+public class BSON_OBJECTID extends Hasher {
+	@SuppressWarnings("rawtypes")
+	private final Class[] noparms = {};
+	
 	@Override
 	public void getHash(Object o, byte[] hash, int hashOffset) throws Exception {
 		if(o==null){
 			Arrays.fill(hash, hashOffset, hashOffset + HASH_LENGTH, (byte)0);
-			hash[hashOffset + HASH_LENGTH] = COMPARE_AS_TIMESTAMP_FOR_NULL;
+			hash[hashOffset + HASH_LENGTH] = COMPARE_AS_ID_FOR_NULL;
 		}else{
-			longToByteArray(((java.sql.Timestamp)o).getTime(),buff,0);
-			intToByteArray(((java.sql.Timestamp)o).getNanos(),buff,8);
-			md.update(buff);
-			md.digest(hash, hashOffset, HASH_LENGTH);
-			hash[hashOffset + HASH_LENGTH] = COMPARE_AS_TIMESTAMP;
+			final byte[] value=(byte[])o.getClass().getDeclaredMethod("toByteArray",noparms).invoke(o);
+			if(value.length>0){
+				md.update(value);
+				md.digest(hash, hashOffset, HASH_LENGTH);
+				hash[hashOffset + HASH_LENGTH] = COMPARE_AS_ID;
+			}else{
+				Arrays.fill(hash, hashOffset, hashOffset + HASH_LENGTH, (byte)0);
+				hash[hashOffset + HASH_LENGTH] = COMPARE_AS_ID_FOR_EMPTY;
+			}
 		}
 	}
 
 	@Override
-	public int getData(Object o, byte[] data, int dataOffset, int maxDataLength) throws Exception {
+	public int getData(Object o, byte[] data, int dataOffset,int maxDataLength)throws Exception {
 		if(o==null) return DATA_LEN_TO_RETURN_FOR_NULL;
-		final byte[] dataByteArr=((java.sql.Timestamp)o).toLocalDateTime().format(f).getBytes(idCharset);
+		final byte[] dataByteArr=o.toString().getBytes(idCharset);
 		if(dataByteArr.length>=maxDataLength){
 			System.arraycopy(dataByteArr,0,data,dataOffset+(maxDataLength<=DATA_LEN_VAL_MAX_FOR_1_BYTE?1:2),maxDataLength);
 			return maxDataLength;
 		}else{
 			System.arraycopy(dataByteArr,0,data,dataOffset+(dataByteArr.length<=DATA_LEN_VAL_MAX_FOR_1_BYTE?1:2),dataByteArr.length);
 			return dataByteArr.length;
-		}
+		}		
 	}
-	
+
 	@Override
 	public int getHashAndData(Object o,byte[] hash,int hashOffset,byte[] data,int dataOffset,int maxDataLength) throws Exception {
 		if(o==null){
 			Arrays.fill(hash, hashOffset, hashOffset + HASH_LENGTH, (byte)0);
-			hash[hashOffset + HASH_LENGTH] = COMPARE_AS_TIMESTAMP_FOR_NULL;
+			hash[hashOffset + HASH_LENGTH] = COMPARE_AS_ID_FOR_NULL;
 			return DATA_LEN_TO_RETURN_FOR_NULL;
 		}else{
-			longToByteArray(((java.sql.Timestamp)o).getTime(),buff,0);
-			intToByteArray(((java.sql.Timestamp)o).getNanos(),buff,8);
-			md.update(buff);
-			md.digest(hash, hashOffset, HASH_LENGTH);
-			hash[hashOffset + HASH_LENGTH] = COMPARE_AS_TIMESTAMP;
-			final byte[] dataByteArr=((java.sql.Timestamp)o).toLocalDateTime().format(f).getBytes(idCharset);
+			final byte[] value=(byte[])o.getClass().getDeclaredMethod("toByteArray",noparms).invoke(o);
+			if(value.length>0){
+				md.update(value);
+				md.digest(hash, hashOffset, HASH_LENGTH);
+				hash[hashOffset + HASH_LENGTH] = COMPARE_AS_ID;
+			}else{
+				Arrays.fill(hash, hashOffset, hashOffset + HASH_LENGTH, (byte)0);
+				hash[hashOffset + HASH_LENGTH] = COMPARE_AS_ID_FOR_EMPTY;
+				return 0;
+			}
+			final byte[] dataByteArr=o.toString().getBytes(idCharset);
 			if(dataByteArr.length>=maxDataLength){
 				System.arraycopy(dataByteArr,0,data,dataOffset+(maxDataLength<=DATA_LEN_VAL_MAX_FOR_1_BYTE?1:2),maxDataLength);
 				return maxDataLength;
 			}else{
 				System.arraycopy(dataByteArr,0,data,dataOffset+(dataByteArr.length<=DATA_LEN_VAL_MAX_FOR_1_BYTE?1:2),dataByteArr.length);
 				return dataByteArr.length;
-			}
+			}		
 		}
 	}
 	
 	public byte getCompareAs() {
-		return COMPARE_AS_TIMESTAMP;
+		return COMPARE_AS_ID;
 	}
 }

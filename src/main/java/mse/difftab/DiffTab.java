@@ -9,11 +9,8 @@ import mse.difftab.config.*;
 import mse.difftab.config.Config.*;
 import mse.difftab.prepared.*;
 
-import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
-import java.sql.PreparedStatement;
 import java.sql.Statement;
-import java.sql.ResultSet;
 import java.io.File;
 import java.io.OutputStream;
 import java.io.FileOutputStream;
@@ -59,8 +56,6 @@ import java.util.concurrent.TimeUnit;
 public class DiffTab {
 	static final String CONFIG_RESOURCE = "mse/difftab/config.xsd";
 	static final String PREPARED_RESOURCE = "mse/difftab/prepared.xsd";
-	static final String HASHER_MAPPING_RESOURCE = "hasher/mapping.properties";
-	static final String HASHER_COMPARABLE_RESOURCE = "hasher/comparable.properties";
 	static final String ADAPTER_MAPPING_RESOURCE = "adapter/mapping.properties";
 	static final String ADAPTER_DRIVERS_RESOURCE = "adapter/drivers.properties";
 	
@@ -195,13 +190,6 @@ public class DiffTab {
 			throw new ConfigValidationException("Working directory \""+dir.getAbsolutePath()+"\" does not exist");
 		if (!dir.canWrite())
 			throw new ConfigValidationException("Working directory \""+dir.getAbsolutePath()+"\" is not writable");
-//		if (dir.list(new FilenameFilter() {
-//			@Override
-//			public boolean accept(File current, String name) {
-//				return !(new File(current, name).isDirectory());
-//			}
-//		}).length > 0)
-//			throw new Exception("Working directory may contain only subdirectories with prepared data!");
 		return dir;
 	}
 	
@@ -236,6 +224,8 @@ public class DiffTab {
 		// set common env properties
 		Hasher.setCommonValues(getIdCharset(), getDateFormat(), getTimestampFormat(), getTimeFormat());
 		Hasher.setHashMethod(config.getHashMethod());
+		ColInfo.OVERALL_COLUMN_NAME = config.getOverallColumnName();
+		
 
 		// allocate containers
 		adapter = new HashMap<String,Adapter>();
@@ -356,6 +346,10 @@ public class DiffTab {
 					prepared.put(srcName,new Prepared());
 					prepared.get(srcName).setIdCharset(config.getIdCharset());
 					prepared.get(srcName).setHashMethod(config.getHashMethod());
+					prepared.get(srcName).setTreatNoSuchColumnAsNull(config.isTreatNoSuchColumnAsNull());
+					prepared.get(srcName).setTreatEmptyAsNull(config.isTreatEmptyAsNull());
+					prepared.get(srcName).setNullIsTypeless(config.isNullIsTypeless());
+
 				}
 			}
 			
@@ -559,7 +553,7 @@ public class DiffTab {
 				// query
 				if (scope == Scope.SCHEMA_COMMON)
 					throw new ConfigValidationException("Query is not supported within scope=SCHEMA_COMMON for the table \"" + source.getTable().indexOf(tabConf)+"\" from the source \""+source.getName());
-					if (tabConf.isCompare()) {
+				if (tabConf.isCompare()) {
 					if (tabConf.getAlias() == null || tabConf.getAlias().isEmpty())
 						throw new ConfigValidationException("Alias is not defined for the table with Idx="+source.getTable().indexOf(tabConf)+" from the source \"" + source.getName() + "\"");
 					TabInfo ti = new TabInfo();
@@ -582,7 +576,7 @@ public class DiffTab {
 		for (TabInfo tab1 : tabs)
 			for (TabInfo tab2 : tabs)
 				if (tab1.alias.equals(tab2.alias) && tab1 != tab2)
-					throw new ConfigValidationException("The same alias is used for the source \"" + source.getName()	+ "\" and tables " + tab1.fullName + " and " + tab2.fullName);
+					throw new ConfigValidationException("The same alias is used for the source \"" + source.getName()	+ "\" for tables " + tab1.fullName + " and " + tab2.fullName);
 
 		return tabs.stream().collect(Collectors.toMap(ti -> ti.alias, ti -> ti, (oldValue, newValue) -> oldValue));
 	}
@@ -597,8 +591,6 @@ public class DiffTab {
 	private Map<String,TabInfo> getTablesForSourcePrepared(Config.SourcePrepared sourcePrepared) throws Exception {
 		Map<String,TabInfo> tabs = new HashMap<String,TabInfo>();
 
-		Properties hasherMapping = getProperties(HASHER_MAPPING_RESOURCE);
-		
 		// load xml file
 		Prepared prepared = getPreparedConfig(getFile(ContentType.PREPARED_CONFIG,sourcePrepared.getName(),null,0));
 		
@@ -607,6 +599,12 @@ public class DiffTab {
 			throw new ConfigValidationException("The hash method in the \""+sourcePrepared.getName()+"\" prepared source is not the same as in the general config");
 		if(!prepared.getIdCharset().equals(config.getIdCharset()))
 			throw new ConfigValidationException("The idCharset in the \""+sourcePrepared.getName()+"\" prepared source is not the same as in the general config");
+		if(prepared.isTreatNoSuchColumnAsNull()!=config.isTreatNoSuchColumnAsNull())
+			throw new ConfigValidationException("The treatNoSuchColumnAsNull in the \""+sourcePrepared.getName()+"\" prepared source is not the same as in the general config");
+		if(prepared.isTreatEmptyAsNull()!=config.isTreatEmptyAsNull())
+			throw new ConfigValidationException("The treatEmptyAsNull in the \""+sourcePrepared.getName()+"\" prepared source is not the same as in the general config");
+		if(prepared.isNullIsTypeless()!=config.isNullIsTypeless())
+			throw new ConfigValidationException("The nullIsTypeless in the \""+sourcePrepared.getName()+"\" prepared source is not the same as in the general config");
 		
 		
 		// for each table
@@ -619,16 +617,19 @@ public class DiffTab {
 			ti.rows = tab.getRows().longValue();
 			ti.columns = new HashMap<String,ColInfo>();
 			for(Prepared.Table.Columns.Column col : tab.getColumns().getColumn()) {
-				if(!hasherMapping.containsValue(col.getHasherClassName()))
-					throw new ConfigValidationException("The \""+col.getHasherClassName()+"\" column's hasher class is not correct in the \""+sourcePrepared.getName()+"\" prepared source's configuration");
-				
+				try {
+					@SuppressWarnings("unused")
+					Hasher h = (Hasher) Class.forName(col.getHasherClassName()).newInstance();
+				}catch(Exception e){
+					throw new ConfigValidationException("The \""+col.getHasherClassName()+"\" column's hasher class is not correct in the \""+sourcePrepared.getName()+"\" prepared source's configuration : " + e.getMessage());
+				}
 				ColInfo ci = new ColInfo();
 				ci.dbName = col.getName();
 				ci.fullName = col.getName();
 				ci.alias = col.getAlias();
 				ci.jdbcClassName = col.getJdbcClassName();
 				ci.hasherClassName = col.getHasherClassName();
-				ci.dataLength = (int)col.getDataLength();
+//				ci.dataLength = (int)col.getDataLength();
 				ci.hashIdx = (int)col.getHashIdx();
 				ci.keyIdx = (int)col.getKeyIdx();
 				ti.columns.put(col.getAlias(), ci);
@@ -639,31 +640,31 @@ public class DiffTab {
 		return tabs;
 	}
 
-	private void normalizeColInfo(List<ColInfo> colsDb) {
-		for (ColInfo ciDb : colsDb) {
-			ciDb.colIdx = colsDb.indexOf(ciDb)+1;
-			ciDb.alias = ciDb.dbName.toUpperCase();
-			ciDb.hashIdx = 1;
-			ciDb.confSrcTabColIdx = -1;
-		}
-	}
+//	private void normalizeColInfo(List<ColInfo> colsDb) {
+//		for (ColInfo ciDb : colsDb) {
+//			ciDb.colIdx = colsDb.indexOf(ciDb)+1;
+//			ciDb.alias = ciDb.dbName.toUpperCase();
+//			ciDb.hashIdx = 1;
+//			ciDb.confSrcTabColIdx = -1;
+//		}
+//	}
 	
-	private String normalizeJdbcClassName(String jdbcClassName,Set<String> supportedJdbcClasses) {
-		if(supportedJdbcClasses.contains(jdbcClassName)) {
-			return jdbcClassName;
-		}else{
-			try{
-				Class<?> jdbcClass = Class.forName(jdbcClassName);
-				for(Class<?> c : jdbcClass.getInterfaces())
-					if(supportedJdbcClasses.contains(c.getName()))
-						return c.getName();
-				if(supportedJdbcClasses.contains(jdbcClass.getSuperclass().getName()))
-					return jdbcClass.getSuperclass().getName();
-			}catch(Exception e){
-			}
-		}
-		return jdbcClassName;
-	}
+//	private String normalizeJdbcClassName(String jdbcClassName,Set<String> supportedJdbcClasses) {
+//		if(supportedJdbcClasses.contains(jdbcClassName)) {
+//			return jdbcClassName;
+//		}else{
+//			try{
+//				Class<?> jdbcClass = Class.forName(jdbcClassName);
+//				for(Class<?> c : jdbcClass.getInterfaces())
+//					if(supportedJdbcClasses.contains(c.getName()))
+//						return c.getName();
+//				if(supportedJdbcClasses.contains(jdbcClass.getSuperclass().getName()))
+//					return jdbcClass.getSuperclass().getName();
+//			}catch(Exception e){
+//			}
+//		}
+//		return jdbcClassName;
+//	}
 	
 	/**
 	 * get information about table's columns
@@ -676,7 +677,6 @@ public class DiffTab {
 	 * @return
 	 * @throws Exception
 	 */
-	@SuppressWarnings("unchecked")
 	private Map<String,ColInfo> getColumnsForSourceDb(
 		SourceDb source, 
 		List<Config.SourceDb.Table.Column> confCols,
@@ -685,20 +685,18 @@ public class DiffTab {
 		Adapter adapter, 
 		boolean isRowidPreffered
 	) throws Exception {
-		PreparedStatement ps = null;
-		Statement stmt = null;
-		ResultSetMetaData md = null;
-		ResultSet rs = null;
-
-		Properties hasherMapping = getProperties(HASHER_MAPPING_RESOURCE);
+//		PreparedStatement ps = null;
+//		Statement stmt = null;
+//		ResultSetMetaData md = null;
+//		ResultSet rs = null;
 
 		List<ColInfo> colsDb = null;
 		List<ColInfo> colsDb2 = null;
 
-		if (tab.query == null) {
+		if(tab.query == null || !adapter.ColumnSetAndDataTypesAreFixed()) {
 			// get list of columns of the table from the DB
 			colsDb = adapter.getColumns(conn, tab.schema, tab.dbName, null);
-			normalizeColInfo(colsDb);
+//			normalizeColInfo(colsDb);
 
 			// for each column name template from the config
 			for (Config.SourceDb.Table.Column cc : confCols) {
@@ -725,8 +723,8 @@ public class DiffTab {
 							ciDb.confSrcTabColIdx = confCols.indexOf(cc);
 							break;
 						}
-					// otherwise just add the "column"(expression,virtual column) to the result list
-					if (!isFound && cc.isCompare()) {
+					// otherwise just add the column to the result list
+					if (!isFound/* && cc.isCompare()*/) {
 						ciDb2.alias = cc.getAlias() != null ? cc.getAlias().toUpperCase() : ciDb2.dbName.toUpperCase();
 						if (cc.isKey() != null)
 							ciDb2.keyIdx = cc.isKey() ? 1 : 0;
@@ -782,104 +780,20 @@ public class DiffTab {
 				}
 			}
 
-			// delete not used columns
-			colsDb2 = new ArrayList<ColInfo>(colsDb);
-			for (ColInfo ci2 : colsDb2)
-				if (ci2.hashIdx == 0 && ci2.keyIdx == 0)
-					colsDb.remove(ci2);
 
-			// create query
-			tab.query = "";
-			for (ColInfo ci : colsDb) tab.query += "," + ci.fullName;
-			tab.query = "SELECT " + (tab.query.length()==0?"":tab.query.substring(1)) + " FROM " + tab.fullName;
-
-			try {
-				// get columns' metadata
-				ps = conn.prepareStatement(tab.query);
-				md = ps.getMetaData();
-
-				// workaround for CSV
-				if (md == null) {
-					ps.close();
-					stmt = conn.createStatement();
-					rs = stmt.executeQuery(tab.query + " WHERE 1=2");
-					md = rs.getMetaData();
-				}
-
-				// get columns' data
-				for (int i = 1; i <= md.getColumnCount(); i++) {
-					ColInfo col = colsDb.get(i - 1);
-					col.jdbcClassName = normalizeJdbcClassName(md.getColumnClassName(i),(Set<String>)(Set<?>)hasherMapping.keySet());
-					if (!hasherMapping.containsKey(col.jdbcClassName))
-						throw new ConfigValidationException("Can not find hasher's mapping for sourceName=\"" + source.getName()
-								+ "\",confSrcTabIdx=" + tab.confSrcTabIdx + ",tableName=" + tab.fullName
-								+ ",columnName=" + col.fullName + ",columnJdbcClassName=\"" + col.jdbcClassName + "\"");
-					col.hasherClassName = hasherMapping.getProperty(col.jdbcClassName);
-					if (col.keyIdx > 0)
-						col.dataLength = config.getMaxKeyColSize();// md.getColumnDisplaySize(i);
-				}
-			} catch (java.sql.SQLException e) {
-				throw new RuntimeException(
-						"SourceName=\"" + source.getName() + "\",confSrcTabIdx=" + tab.confSrcTabIdx
-								+ ",tableName=" + tab.fullName + ",query='" + tab.query + "':" + e.getMessage(), e);
-			} finally {
-				try {
-					ps.close();
-				} catch (Exception e) {
-				}
-				try {
-					rs.close();
-				} catch (Exception e) {
-				}
-				try {
-					stmt.close();
-				} catch (Exception e) {
-				}
+			if(adapter.ColumnSetAndDataTypesAreFixed()) {
+				// delete not used columns
+				colsDb2 = new ArrayList<ColInfo>(colsDb);
+				for (ColInfo ci2 : colsDb2)
+					if (ci2.hashIdx == 0 && ci2.keyIdx == 0)
+						colsDb.remove(ci2);
 			}
+			
+			// create query
+			tab.query = adapter.getQuery(conn,tab.schema,tab.dbName,colsDb);
 		} else {
 			// get list of columns from the DB
-			colsDb = new ArrayList<ColInfo>();
-
-			try {
-				// get columns' metadata
-				ps = conn.prepareStatement(tab.query);
-				md = ps.getMetaData();
-
-				// workaround for CSV
-				if (md == null) {
-					ps.close();
-					stmt = conn.createStatement();
-					rs = stmt.executeQuery(tab.query);
-					md = rs.getMetaData();
-				}
-
-				// get columns' data
-				for (int i = 1; i <= md.getColumnCount(); i++) {
-					ColInfo col = new ColInfo();
-					col.dbName = md.getColumnName(i);
-					col.fullName = col.dbName;
-					col.alias = col.dbName.toUpperCase();
-					col.jdbcClassName = normalizeJdbcClassName(md.getColumnClassName(i),(Set<String>)(Set<?>)hasherMapping.keySet());
-					if (!hasherMapping.containsKey(col.jdbcClassName))
-						throw new ConfigValidationException("Can not find hasher's mapping for sourceName=\"" + source.getName()
-								+ "\",confSrcTabIdx=" + tab.confSrcTabIdx + ",tableName=" + tab.fullName
-								+ ",columnName=" + col.fullName + ",columnJdbcClassName=\"" + col.jdbcClassName + "\"");
-					col.hasherClassName = hasherMapping.getProperty(col.jdbcClassName);
-					col.keyIdx = 0;
-					col.hashIdx = 1;
-					col.dataLength = config.getMaxKeyColSize();// md.getColumnDisplaySize(i);
-					col.colIdx = colsDb.size()+1;
-					colsDb.add(col);
-				}
-			} catch (java.sql.SQLException e) {
-				throw new RuntimeException(
-						"SourceName=\"" + source.getName() + "\",confSrcTabIdx=" + tab.confSrcTabIdx
-								+ ",tableName=" + tab.fullName + ",query='" + tab.query + "':" + e.getMessage(), e);
-			} finally {
-				try{ps.close();}catch(Exception e){}
-				try{rs.close();}catch(Exception e){}
-				try{stmt.close();}catch(Exception e){}
-			}
+			colsDb = adapter.getColumns(conn, tab.query);
 
 			// look up configuration for columns' properties' modifications
 			for (Config.SourceDb.Table.Column cc : confCols) {
@@ -887,10 +801,8 @@ public class DiffTab {
 				for (ColInfo ci : colsDb) {
 					if (cc.getNameFilter().equals(ci.dbName) || cc.getNameFilter().trim().toUpperCase().equals(ci.dbName.toUpperCase())) {
 						isFound = true;
-						if (cc.getAlias() != null)
-							ci.alias = cc.getAlias().toUpperCase();
-						if (cc.isKey() != null)
-							ci.keyIdx = cc.isKey() ? 1 : 0;
+						if (cc.getAlias() != null) ci.alias = cc.getAlias().toUpperCase();
+						if (cc.isKey() != null)	ci.keyIdx = cc.isKey() ? 1 : 0;
 						ci.hashIdx = cc.isCompare() ? 1 : 0;
 						ci.confSrcTabColIdx = confCols.indexOf(cc);
 						break;
@@ -902,35 +814,28 @@ public class DiffTab {
 							+ "\",confSrcTabColIdx=" + confCols.indexOf(cc));
 			}
 
+			// check if the result column list is empty(has not comparable columns)
+			if (!colsDb.stream().anyMatch(ci -> ci.hashIdx>0))
+				throw new ConfigValidationException("Comparable column(s) is not defined for sourceName=\"" + source.getName()
+						+ "\",confSrcTabIdx=" + tab.confSrcTabIdx + ",tableName=\"" + tab.fullName + "\"");
+
 			// check if a key column is present
 			if (!colsDb.stream().anyMatch(ci -> ci.keyIdx>0))
 				throw new ConfigValidationException("Key column(s) is not defined for sourceName=\"" + source.getName()
 						+ "\",confSrcTabIdx=" + tab.confSrcTabIdx + ",tableName=\"" + tab.fullName + "\"");
 		}
+		
+		///////////////////////////////////////////////////////
+		// validate list of columns
+		///////////////////////////////////////////////////////
 
 		// check for uniqueness of aliases
 		for (ColInfo col1 : colsDb)
 			for (ColInfo col2 : colsDb)
-				if (col1.alias.equals(col2.alias) && col1 != col2)
+				if ((col1.hashIdx>0||col1.keyIdx>0) && (col2.hashIdx>0||col2.keyIdx>0) && col1.alias.equals(col2.alias) && col1 != col2)
 					throw new ConfigValidationException("The same alias \"" + col1.alias + "\" is used for sourceName=\""
 							+ source.getName() + "\",confSrcTabIdx=" + tab.confSrcTabIdx + ",tableName="
 							+ tab.fullName + ",columns " + col1.fullName + " and " + col2.fullName);
-
-		// check key columns hashers if we can get the key data
-		for (ColInfo col : colsDb)
-			if (col.keyIdx > 0 && !((Hasher) Class.forName("mse.difftab.hasher." + col.hasherClassName).newInstance())
-					.getDataIsSupported())
-				throw new ConfigValidationException("Can not key column data for sourceName=\"" + source.getName() + "\",confSrcTabIdx="
-						+ tab.confSrcTabIdx + ",tableName=" + tab.fullName + ",columnName=" + col.fullName
-						+ ",columnJdbcClassName=\"" + col.jdbcClassName + "\",columnHasherClassName=\"" + col.hasherClassName
-						+ "\"");
-
-		// check key columns size
-		for (ColInfo col : colsDb)
-			if (col.keyIdx > 0 && col.dataLength > config.getMaxKeyColSize())
-				throw new ConfigValidationException("Key column values are too long for sourceName=\"" + source.getName()
-						+ "\",confSrcTabIdx=" + tab.confSrcTabIdx + ",tableName=" + tab.fullName + ",columnName="
-						+ col.fullName + ",columnJdbcClassName=\"" + col.jdbcClassName + "\"");
 
 		return colsDb.stream().collect(Collectors.toMap(ci -> ci.alias, ci -> ci, (oldValue, newValue) -> oldValue));
 	}
@@ -1002,18 +907,30 @@ public class DiffTab {
 							throw new ConfigValidationException("sourceName=\"" + sourceName + "\",tableAlias=\"" + commonTabAlias + "\",columnAlias=\"" + keyColAlias + "\" is not key or is not found found"); 
 			}
 
+		// set hasher classes for columns
+		for(String srcName : tabInfoTree.keySet())
+			for(String tabAlias : commonTabs)
+				for(String colAlias : tabInfoTree.get(srcName).get(tabAlias).columns.keySet())
+					if(tabInfoTree.get(srcName).get(tabAlias).columns.get(colAlias).hashIdx>0 || tabInfoTree.get(srcName).get(tabAlias).columns.get(colAlias).keyIdx>0)
+						try{
+							ColInfo ci = tabInfoTree.get(srcName).get(tabAlias).columns.get(colAlias);
+							ci.hasherClassName = Hasher.getHasherClass(ci.jdbcClassName).getName();
+						}catch(RuntimeException e) {
+							throw new ConfigValidationException("Can not determine hash class name for srcName=\"" + srcName + "\",tableAlias=\"" + tabAlias + "\",columnAlias=\"" + colAlias + "\" : " + e.getMessage()); 
+						}
+		
+		
 		// compare hashers for comparable columns
-		Properties hasherComparable = getProperties(HASHER_COMPARABLE_RESOURCE);
-
 		for(String commonTabAlias : commonTabs) {
 			// create list of available columns' aliases(the same table, all sources)
 			boolean groupByKey = tabInfoTree.keySet().stream().anyMatch(sourceName -> tabInfoTree.get(sourceName).get(commonTabAlias).groupByKey);
 			Set<String> allColsOfTabFromAllSources = tabInfoTree.values().stream().flatMap(v -> {return v.get(commonTabAlias).columns.values().stream().filter(ci -> ci.hashIdx > 0 || (groupByKey && ci.keyIdx > 0)).map(ci -> ci.alias);}).distinct().collect(Collectors.toSet());
 			// for each column
-			for(String colAlias : allColsOfTabFromAllSources)
-				// how many distinct hasher classes exist for the given column alias
-				if(tabInfoTree.values().stream().map(tabs -> tabs.get(commonTabAlias).columns.get(colAlias).hasherClassName).map(hcn -> hasherComparable.containsKey(hcn)?hasherComparable.getProperty(hcn):hcn).distinct().count() > 1)
+			for(String colAlias : allColsOfTabFromAllSources) {
+				// for SQL sources only : how many distinct hasher classes exist for a given column alias
+				if(tabInfoTree.keySet().stream().filter(sourceName->adapter.get(sourceName).ColumnSetAndDataTypesAreFixed()).map(sourceName -> getCompareAs(tabInfoTree.get(sourceName).get(commonTabAlias).columns.get(colAlias).hasherClassName)).distinct().count() > 1) 
 					throw new ConfigValidationException("tableAlias=\"" + commonTabAlias + "\",columnAlias=\"" + colAlias + "\" hasher class name is not unique"); 
+			}
 		}
 		
 		//////////////////////////////////////
@@ -1078,7 +995,7 @@ public class DiffTab {
 	}
 
 	private int prepareHashOfTableRows(String tabAlias, Map<String,Connection> conn, Map<String,Map<String,TabInfo>> tabInfoTree) throws Exception {
-		Map<String,PreparedStatement> stmt = new HashMap<String,PreparedStatement>();
+		Map<String,Statement> stmt = new HashMap<String,Statement>();
 		Map<String,SqlQueryExcutor> sqlExec = new HashMap<String,SqlQueryExcutor>();
 		Map<String,OutputStream[]> hashStreamH = new HashMap<String,OutputStream[]>();
 		Map<String,OutputStream[]> hashStreamK = new HashMap<String,OutputStream[]>();
@@ -1104,8 +1021,8 @@ public class DiffTab {
 		try {
 			// prepare execution of SELECT statements
 			for(String srcName : dbSources) {
-				stmt.put(srcName, conn.get(srcName).prepareStatement(tabInfoTree.get(srcName).get(tabAlias).query));
-				sqlExec.put(srcName, new SqlQueryExcutor(srcName, this, stmt.get(srcName)));
+				stmt.put(srcName, conn.get(srcName).createStatement());
+				sqlExec.put(srcName, new SqlQueryExcutor(srcName, this, stmt.get(srcName), tabInfoTree.get(srcName).get(tabAlias).query));
 			}
 
 			// start executors
@@ -1248,6 +1165,30 @@ public class DiffTab {
 		return config.getTimeFormat();
 	}
 	
+	String getOverallColumnName() {
+		return config.getOverallColumnName();
+	}
+	
+	String getNullValueIndicator() {
+		return config.getNullValueIndicator();
+	}
+	
+	String getNoSuchColumnIndicator() {
+		return config.getNoSuchColumnIndicator();
+	}
+	
+	boolean getTreatNoSuchColumnAsNull() {
+		return config.isTreatNoSuchColumnAsNull();
+	}
+	
+	boolean getTreatEmptyAsNull() {
+		return config.isTreatEmptyAsNull();
+	}
+
+	boolean getNullIsTypeless() {
+		return config.isNullIsTypeless();
+	}
+	
 	synchronized protected boolean checkFailure() {
 		return firstException == null;
 	}
@@ -1330,7 +1271,7 @@ public class DiffTab {
 			);
 	}
 
-	private Properties getProperties(String resource) throws Exception {
+	static Properties getProperties(String resource) throws Exception {
 		Properties props = new Properties();
 		java.io.InputStream propStream = DiffTab.class.getResourceAsStream(resource);
 		props.load(propStream);
@@ -1390,7 +1331,6 @@ public class DiffTab {
 			c.setHasherClassName(ci.hasherClassName);
 			c.setHashIdx(ci.hashIdx);
 			c.setKeyIdx(ci.keyIdx);
-			c.setDataLength(ci.dataLength);
 			t.getColumns().getColumn().add(c);
 		}
 		if(chunks != null) {
@@ -1420,21 +1360,33 @@ public class DiffTab {
 	}
 	
 	private class ShutdownHook extends Thread {
-		private Collection<PreparedStatement> pss;
-		ShutdownHook(Collection<PreparedStatement> pss) {
-			this.pss=pss;
+		private Collection<Statement> ss;
+		ShutdownHook(Collection<Statement> ss) {
+			this.ss=ss;
 		}
 		public void run() {
-			for(PreparedStatement ps : pss) {
+			for(Statement s : ss) {
 				try {
-					ps.cancel();
+					s.cancel();
 				}catch(Exception e) {
 				}
 				try {
-					ps.getConnection().close();
+					s.getConnection().close();
 				}catch(Exception e) {
 				}
 			}
 		}
+	}
+	
+	private byte getCompareAs(String hcn){
+		try{
+			return ((Hasher)Class.forName(hcn).newInstance()).getCompareAs();
+		}catch(Exception e) {
+			return 0;
+		}
+	}
+	
+	public int getMaxKeyColSize() {
+		return config.getMaxKeyColSize();
 	}
 }

@@ -1,12 +1,14 @@
 package mse.difftab.adapter;
 
 import mse.difftab.ColInfo;
-
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.util.List;
+import java.util.stream.Collectors;
 import java.util.ArrayList;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 
 import mse.difftab.Adapter;
 import mse.difftab.TabInfo;
@@ -60,12 +62,17 @@ public class ORACLE implements Adapter {
 			}else{
 				rs=st.executeQuery("SELECT column_name FROM all_cons_columns cc JOIN all_constraints c ON cc.owner=c.owner AND cc.table_name=c.table_name AND cc.constraint_name=c.constraint_name AND c.constraint_type='P' AND c.owner='"+schema+"' AND c.table_name='"+table+"'");
 			}
+			int i = 0;
 			while(rs.next()){
 				ColInfo ci;
 				ci=new ColInfo();
-				ci.dbName=rs.getString(1);
+				ci.colIdx = ++i;
+				ci.dbName = rs.getString(1);
 				ci.fullName="\""+ci.dbName+"\"";
-				ci.hashIdx=1;
+				ci.alias = ci.dbName.toUpperCase();
+				ci.hashIdx = 1;
+				ci.keyIdx = 1;
+				ci.confSrcTabColIdx = -1;
 				cols.add(ci);
 			}
 		}finally{
@@ -90,9 +97,13 @@ public class ORACLE implements Adapter {
 			if(rs.wasNull()){
 				cols=new ArrayList<ColInfo>();
 				ColInfo ci=new ColInfo();
+				ci.colIdx = 1;
 				ci.dbName="ROWID";
 				ci.fullName=ci.dbName;
-				ci.hashIdx=0;
+				ci.alias = ci.dbName.toUpperCase();
+				ci.hashIdx = 0;
+				ci.keyIdx = 1;
+				ci.confSrcTabColIdx = -1;	
 				cols.add(ci);
 			}else{
 				cols=getPK(conn,schema,table);
@@ -110,18 +121,16 @@ public class ORACLE implements Adapter {
 		if(isRowidPreffered){
 			cols=getROWID(conn,schema,table);
 			if(cols.size()==0){
-				return getPK(conn,schema,table);
-			}else{
-				return cols;
+				cols= getPK(conn,schema,table);
 			}
 		}else{
 			cols= getPK(conn,schema,table);
 			if(cols.size()==0){
-				return getROWID(conn,schema,table);
-			}else{
-				return cols;
+				cols=getROWID(conn,schema,table);
 			}
 		}
+		fillJavaTypeForColumns(conn, getQuery(conn, schema, table, cols), cols);
+		return cols;
 
 	}
 
@@ -142,19 +151,89 @@ public class ORACLE implements Adapter {
 		
 		try{
 			rs=st.executeQuery(query);
+			int i = 0;
 			while(rs.next()){
 				ColInfo ci=new ColInfo();
+				ci.colIdx = ++i;
 				ci.dbName=rs.getString(1);
 				ci.fullName="\""+ci.dbName+"\"";
-				ci.hashIdx=1;
-				cols.add(ci);
+				ci.alias = ci.dbName.toUpperCase();
+				ci.hashIdx = 1;
+				ci.keyIdx = 0;
+				ci.confSrcTabColIdx = -1;
 			}
 			rs.close();
 		}finally{
 			try{rs.close();}catch(Exception e){}
 			try{st.close();}catch(Exception e){}
 		}
+		
+		fillJavaTypeForColumns(conn, getQuery(conn, schema, table, cols), cols);
 		return cols;
+	}
+
+	private void fillJavaTypeForColumns(Connection conn, String query, List<ColInfo> columns)throws Exception {
+		PreparedStatement ps = null;
+		ResultSetMetaData md = null;
+
+		try {
+			if(columns.size()>0) {
+				// get columns' metadata
+				ps = conn.prepareStatement(query);
+				md = ps.getMetaData();
+
+				// get columns' data
+				for (int i = 1; i <= columns.size(); i++)
+					columns.get(i - 1).jdbcClassName = md.getColumnClassName(i);
+			}
+		} finally {
+			try{ps.close();}catch(Exception e){}
+		}
+	}
+	
+	@Override
+	public boolean ColumnSetAndDataTypesAreFixed() {
+		return true;
+	}
+
+	@Override
+	public String getQuery(Connection conn, String schema, String table, List<ColInfo> columns){
+		if(columns==null || columns.isEmpty()){
+			return "SELECT * FROM "+(schema==null?"":("\""+schema+"\"."))+"\""+table+"\"";
+		}else{
+			return "SELECT "+columns.stream().map(ci -> ci.fullName).collect(Collectors.joining(","))+" FROM "+(schema==null?"":("\""+schema+"\"."))+"\""+table+"\"";
+		}
+	}
+
+	@Override
+	public List<ColInfo> getColumns(Connection conn,String query)throws Exception{
+		PreparedStatement ps = null;
+		ResultSetMetaData md = null;
+		List<ColInfo> columns = new ArrayList<ColInfo>();
+		
+		try {
+			// get columns' metadata
+			ps = conn.prepareStatement(query);
+			md = ps.getMetaData();
+
+			// get columns' data
+			for (int i = 1; i <= md.getColumnCount(); i++) {
+				ColInfo col = new ColInfo();
+				col.colIdx = i;
+				col.dbName = md.getColumnName(i);
+				col.fullName = "\""+col.dbName+"\"";
+				col.alias = col.dbName.toUpperCase();
+				col.jdbcClassName = md.getColumnClassName(i);
+				col.keyIdx = 0;
+				col.hashIdx = 1;
+				col.confSrcTabColIdx = -1;
+				columns.add(col);
+			}
+			
+			return columns;
+		} finally {
+			try{ps.close();}catch(Exception e){}
+		}		
 	}
 
 }

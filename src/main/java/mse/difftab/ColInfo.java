@@ -9,6 +9,6 @@ public class ColInfo {
 	public String hasherClassName;
 	public int hashIdx;
 	public int keyIdx;
-	public int dataLength;
 	public int confSrcTabColIdx;
+	public static String OVERALL_COLUMN_NAME;
 }

@@ -32,8 +32,13 @@
 												-->
 												<attribute name="key" type="boolean" use="optional"></attribute>
 
+												<!-- In case of  "group_of_rows" matching comparison mode the value of this column is serialized too but is not used for the GROUP BY operation
+												-->
+												<attribute name="secondaryKey" type="boolean" use="optional"></attribute>
+
 												<!-- Is a "comparable" column. You may suppress the data comparison for the selected columns. -->
 												<attribute name="compare" type="boolean" use="optional"	default="true"></attribute>
+
 											</complexType>
 										</element>
 									</sequence>
@@ -92,6 +97,7 @@
 						<attribute name="name" type="token" use="required"></attribute>
 					</complexType>
 				</element>
+				
 			</choice>
 
 			<!-- What to do:
@@ -202,8 +208,33 @@
 				</simpleType>
 			</attribute>
 
-			<!-- Column data separation in reports. -->			
+			<!-- Format of report -->			
 			<attribute name="logColumnSeparator" type="string" use="optional" default=";"></attribute>
+			<attribute name="logKeyValueSeparator" type="string" use="optional" default=","></attribute>
+			<attribute name="logKeyValueEnclosedBy" type="string" use="optional" default="&quot;"></attribute>
+			<attribute name="logPrintHeader" type="boolean" use="optional" default="true"></attribute>
+			
+			<!-- Overall(for non-specified columns) column name -->
+			<attribute name="OverallColumnName" type="string" use="optional" default="THE_REST_OF_THE_COLUMNS"></attribute>
+
+			<!-- "There_is_not_such_column" indicator in reports(for serialized|key columns of NoSql databases). -->			
+			<attribute name="NoSuchColumnIndicator" type="string" use="optional" default="_NSC_"></attribute>
+
+			<!-- Null value indicator in reports. -->			
+			<attribute name="NullValueIndicator" type="string" use="optional" default="_NULL_"></attribute>
+
+			<!-- "Key value was not serialized" indicator in reports. -->			
+			<attribute name="NoDataSerializerIndicator" type="string" use="optional" default="_NDS_"></attribute>
+
+			<!-- Treat "There_is_not_such_column" as NULL -->			
+			<attribute name="TreatNoSuchColumnAsNull" type="boolean" use="optional" default="false"></attribute>
+
+			<!-- Treat "empty" as NULL -->			
+			<attribute name="TreatEmptyAsNull" type="boolean" use="optional" default="false"></attribute>
+
+			<!-- NULL has not data type -->			
+			<attribute name="NullIsTypeless" type="boolean" use="optional" default="true"></attribute>
+
 
 			<!-- How to select tables for comparison.
 				All common tables
@@ -227,6 +258,12 @@
       				</restriction>
 				</simpleType>
 			</attribute>
+			
+			<!-- Separator for nested elements of a column(Map type). For example "COLUMN_A.FIELD_B" 
+				May be used to disable comparison for nested fields
+			-->			
+			<attribute name="NestedElementSepator" type="string" use="optional" default="."></attribute>
+			
 			
 		</complexType>
 
