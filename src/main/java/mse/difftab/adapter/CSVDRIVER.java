@@ -16,23 +16,21 @@ import java.sql.ResultSetMetaData;
 public class CSVDRIVER implements Adapter {
 	@Override
 	public List<TabInfo> getTables(Connection conn,String schemaFilter,String nameFilter)throws Exception {
-		nameFilter=(nameFilter==null)?"%":("%"+nameFilter.trim()+"%");
-
 		List<TabInfo>tabs=new ArrayList<TabInfo>(); 
 		TabInfo ti;
-
 		ResultSet rs=null;
 		
 		try{
-			rs=conn.getMetaData().getTables(null,null,nameFilter,null);
-
+			rs=conn.getMetaData().getTables(null,null,"%",null);
 			while(rs.next()){
-				ti=new TabInfo();
-				ti.dbName=rs.getString("TABLE_NAME");
-				ti.fullName=ti.dbName;
-				ti.schema=null;
-				ti.rows=-1;
-				tabs.add(ti);
+				if(nameFilter == null || rs.getString("TABLE_NAME").matches(nameFilter)) {
+					ti=new TabInfo();
+					ti.dbName=rs.getString("TABLE_NAME");
+					ti.fullName=ti.dbName;
+					ti.schema=null;
+					ti.rows=-1;
+					tabs.add(ti);
+				}
 			}
 		}finally{
 			try{rs.close();}catch(Exception e){}
@@ -51,17 +49,16 @@ public class CSVDRIVER implements Adapter {
 		Statement st=conn.createStatement();
 		ResultSet rs=null;
 
-		nameFilter=nameFilter==null?"":nameFilter.trim();
 		String query="SELECT * FROM "+table/*+" LIMIT 0"*/;
-
 		try{
 			rs=st.executeQuery(query);
 			ResultSetMetaData md = rs.getMetaData();
+			int j = 0;
 			for(int i=1;i<=md.getColumnCount();i++){
-				if(nameFilter.isEmpty()||nameFilter.equalsIgnoreCase(md.getColumnName(i))){
+				if(nameFilter == null || md.getColumnName(i).matches(nameFilter)){
 					ColInfo ci=new ColInfo();
-					ci.colIdx = i;
-					ci.dbName=rs.getMetaData().getColumnName(i);
+					ci.colIdx = ++j;
+					ci.dbName=md.getColumnName(i);
 					ci.fullName=ci.dbName;
 					ci.alias = ci.dbName.toUpperCase();
 					ci.hashIdx = 1;

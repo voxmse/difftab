@@ -22,33 +22,23 @@ public class MYSQL implements Adapter {
 		ResultSet rs=null;
 		TabInfo ti;
 
-		nameFilter=(nameFilter==null)?"":nameFilter.trim();
-		if(!nameFilter.isEmpty()){
-			nameFilter=nameFilter.replaceAll("(?<!\\\\)\\?","").equals(nameFilter)?"(table_name='"+nameFilter+"')":"("+nameFilter.replaceAll("(?<!\\\\)\\?","table_name")+")";
-			nameFilter=nameFilter.replaceAll("\\\\\\?","\\?");
-		}
-		schemaFilter=(schemaFilter==null)?"?=database()":schemaFilter.trim();
-		if(!schemaFilter.isEmpty()){
-			schemaFilter=schemaFilter.replaceAll("(?<!\\\\)\\?","").equals(schemaFilter)?"(table_schema='"+schemaFilter+"')":"("+schemaFilter.replaceAll("(?<!\\\\)\\?","table_schema")+")";
-			schemaFilter=schemaFilter.replaceAll("\\\\\\?","\\?");
-		}
 		String query="SELECT table_name,CONCAT('`',table_name,'`'),table_schema,table_rows FROM information_schema.tables";
-		if(!nameFilter.isEmpty()||!schemaFilter.isEmpty()) query+=" WHERE ";
-		if(!nameFilter.isEmpty()) query+=nameFilter;
-		if(!nameFilter.isEmpty()&&!schemaFilter.isEmpty()) query+=" AND ";
-		if(!schemaFilter.isEmpty()) query+=schemaFilter;
-		query+=" ORDER BY 1";
-	
+		if(schemaFilter == null) {
+			query += " WHERE table_schema=ifnull(database(),'information_schema')";
+		}
+		query += " ORDER BY 1";
 		try{
 			rs=st.executeQuery(query);
 			while(rs.next()){
-				ti=new TabInfo();
-				ti.dbName=rs.getString(1);
-				ti.fullName=rs.getString(2);
-				ti.schema=rs.getString(3);
-				ti.rows=rs.getLong(4);
-				if(rs.wasNull()) ti.rows=-1;
-				tabs.add(ti);
+				if((schemaFilter == null || rs.getString(3).matches(schemaFilter)) && (nameFilter == null || rs.getString(1).matches(nameFilter))){
+					ti=new TabInfo();
+					ti.dbName=rs.getString(1);
+					ti.fullName=rs.getString(2);
+					ti.schema=rs.getString(3);
+					ti.rows=rs.getLong(4);
+					if(rs.wasNull()) ti.rows=-1;
+					tabs.add(ti);
+				}
 			}
 			rs.close();
 		}finally{
@@ -112,28 +102,22 @@ public class MYSQL implements Adapter {
 		Statement st=conn.createStatement();
 		ResultSet rs=null;
 
-		nameFilter=nameFilter==null?"":nameFilter.trim();
-		if(!nameFilter.isEmpty()){
-			nameFilter=nameFilter.replaceAll("(?<!\\\\)\\?","").equals(nameFilter)?"(column_name='"+nameFilter+"')":"("+nameFilter.replaceAll("(?<!\\\\)\\?","column_name")+")";
-			nameFilter=nameFilter.replaceAll("\\\\\\?","\\?");
-		}
-		String query="SELECT column_name FROM information_schema.columns WHERE table_name='"+table+"' AND table_schema='"+schema+"'";
-		if(!nameFilter.isEmpty()) query+=" AND "+nameFilter;
-		query+=" ORDER BY ordinal_position";
-		
+		String query="SELECT column_name FROM information_schema.columns WHERE table_name='"+table+"' AND table_schema='"+schema+"' ORDER BY ordinal_position";
 		try{
 			rs=st.executeQuery(query);
 			int i = 0;
 			while(rs.next()){
-				ColInfo ci=new ColInfo();
-				ci.colIdx = ++i;
-				ci.dbName=rs.getString(1);
-				ci.fullName="`"+ci.dbName+"`";
-				ci.alias = ci.dbName.toUpperCase();
-				ci.hashIdx = 1;
-				ci.keyIdx = 0;
-				ci.confSrcTabColIdx = -1;				
-				cols.add(ci);
+				if(nameFilter == null || rs.getString(1).matches(nameFilter)) {
+					ColInfo ci=new ColInfo();
+					ci.colIdx = ++i;
+					ci.dbName=rs.getString(1);
+					ci.fullName="`"+ci.dbName+"`";
+					ci.alias = ci.dbName.toUpperCase();
+					ci.hashIdx = 1;
+					ci.keyIdx = 0;
+					ci.confSrcTabColIdx = -1;				
+					cols.add(ci);
+				}
 			}
 			rs.close();
 		}finally{

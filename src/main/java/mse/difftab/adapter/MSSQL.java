@@ -22,34 +22,24 @@ public class MSSQL implements Adapter {
 		ResultSet rs=null;
 		TabInfo ti;
 
-		nameFilter=(nameFilter==null)?"":nameFilter.trim();
-		if(!nameFilter.isEmpty()){
-			nameFilter=nameFilter.replaceAll("(?<!\\\\)\\?","").equals(nameFilter)?"(ta.name='"+nameFilter+"')":"("+nameFilter.replaceAll("(?<!\\\\)\\?","ta.name")+")";
-			nameFilter=nameFilter.replaceAll("\\\\\\?","\\?");
-		}
-		schemaFilter=(schemaFilter==null)?"?=current_schema":schemaFilter.trim();
-		if(!schemaFilter.isEmpty()){
-			schemaFilter=schemaFilter.replaceAll("(?<!\\\\)\\?","").equals(schemaFilter)?"(sc.name='"+schemaFilter+"')":"("+schemaFilter.replaceAll("(?<!\\\\)\\?","sc.name")+")";
-			schemaFilter=schemaFilter.replaceAll("\\\\\\?","\\?");
-		}
-		
 		String query="SELECT ta.name,'['+sc.name+'].['+ta.name+']',sc.name schemaname,SUM(pa.rows)"+
 		" FROM sys.tables ta JOIN sys.partitions pa ON pa.OBJECT_ID=ta.OBJECT_ID JOIN sys.schemas sc ON ta.schema_id=sc.schema_id"+
 		" WHERE ta.is_ms_shipped=0 AND pa.index_id IN(1,0)";
-		if(!nameFilter.isEmpty()) query += " AND " + nameFilter;
-		if(!schemaFilter.isEmpty()) query += " AND " + schemaFilter;
+		if(schemaFilter == null) query += " AND sc.name=SCHEMA_NAME()";
 		query += " GROUP BY ta.name,'['+sc.name+'].['+ta.name+']',sc.name";
 
 		try{
 			rs=st.executeQuery(query);
 			while(rs.next()){
-				ti=new TabInfo();
-				ti.dbName=rs.getString(1);
-				ti.fullName=rs.getString(2);
-				ti.schema=rs.getString(3);
-				ti.rows=rs.getLong(4);
-				if(rs.wasNull()) ti.rows=-1;
-				tabs.add(ti);
+				if((schemaFilter == null || rs.getString(3).matches(schemaFilter)) && (nameFilter == null || rs.getString(1).matches(nameFilter))){
+					ti=new TabInfo();
+					ti.dbName=rs.getString(1);
+					ti.fullName=rs.getString(2);
+					ti.schema=rs.getString(3);
+					ti.rows=rs.getLong(4);
+					if(rs.wasNull()) ti.rows=-1;
+					tabs.add(ti);
+				}
 			}
 			rs.close();
 		}finally{
@@ -136,29 +126,22 @@ public class MSSQL implements Adapter {
 		Statement st=conn.createStatement();
 		ResultSet rs=null;
 
-		nameFilter=nameFilter==null?"":nameFilter.trim();
-		if(!nameFilter.isEmpty()){
-			nameFilter=nameFilter.replaceAll("(?<!\\\\)\\?","").equals(nameFilter)?"(c.name='"+nameFilter+"')":"("+nameFilter.replaceAll("(?<!\\\\)\\?","c.name")+")";
-			nameFilter=nameFilter.replaceAll("\\\\\\?","\\?");
-		}
-		String query="SELECT c.name FROM sys.columns c JOIN sys.objects o ON o.object_id=c.object_id WHERE o.type IN('U','V') AND o.name='"+table+"' AND OBJECT_SCHEMA_NAME(c.object_id)='"+schema+"'";
-
-		if(!nameFilter.isEmpty()) query+=" AND "+nameFilter;
-		query+=" ORDER BY c.column_id";
-		
+		String query="SELECT c.name FROM sys.columns c JOIN sys.objects o ON o.object_id=c.object_id WHERE o.type IN('U','V') AND o.name='"+table+"' AND OBJECT_SCHEMA_NAME(c.object_id)='"+schema+"' ORDER BY c.column_id";
 		try{
 			rs=st.executeQuery(query);
 			int i = 0;
 			while(rs.next()){
-				ColInfo ci=new ColInfo();
-				ci.colIdx = ++i;
-				ci.dbName=rs.getString(1);
-				ci.fullName="["+ci.dbName+"]";
-				ci.alias = ci.dbName.toUpperCase();
-				ci.hashIdx = 1;
-				ci.keyIdx = 0;
-				ci.confSrcTabColIdx = -1;				
-				cols.add(ci);
+				if(nameFilter == null || rs.getString(1).matches(nameFilter)) {
+					ColInfo ci=new ColInfo();
+					ci.colIdx = ++i;
+					ci.dbName=rs.getString(1);
+					ci.fullName="["+ci.dbName+"]";
+					ci.alias = ci.dbName.toUpperCase();
+					ci.hashIdx = 1;
+					ci.keyIdx = 0;
+					ci.confSrcTabColIdx = -1;				
+					cols.add(ci);
+				}
 			}
 			rs.close();
 		}finally{
@@ -232,8 +215,5 @@ public class MSSQL implements Adapter {
 		} finally {
 			try{ps.close();}catch(Exception e){}
 		}
-		
 	}
-	
-	
 }

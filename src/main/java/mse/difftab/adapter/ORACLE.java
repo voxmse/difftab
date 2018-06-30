@@ -21,28 +21,23 @@ public class ORACLE implements Adapter {
 		ResultSet rs=null;
 		TabInfo ti;
 
-		nameFilter=(nameFilter==null)?"":nameFilter.trim();
-		if(!nameFilter.isEmpty()){
-			nameFilter=nameFilter.replaceAll("(?<!\\\\)\\?","").equals(nameFilter)?"(TABLE_NAME='"+nameFilter+"')":"("+nameFilter.replaceAll("(?<!\\\\)\\?","TABLE_NAME")+")";
-			nameFilter=nameFilter.replaceAll("\\\\\\?","\\?");
+		String query;
+		if(schemaFilter == null) {
+			query = "SELECT table_name,'\"'||USER||'\".\"'||table_name||'\"',USER,NVL(num_rows,-1) FROM user_tables WHERE temporary='N' AND secondary='N' AND nested='NO'";
+		}else{
+			query = "SELECT table_name,'\"'||owner||'\".\"'||table_name||'\"',owner,NVL(num_rows,-1) FROM all_tables WHERE temporary='N' AND secondary='N' AND nested='NO'";
 		}
-		schemaFilter=(schemaFilter==null)?"?=USER":schemaFilter.trim();
-		if(!schemaFilter.isEmpty()){
-			schemaFilter=schemaFilter.replaceAll("(?<!\\\\)\\?","").equals(schemaFilter)?"(OWNER='"+schemaFilter+"')":"("+schemaFilter.replaceAll("(?<!\\\\)\\?","OWNER")+")";
-			schemaFilter=schemaFilter.replaceAll("\\\\\\?","\\?");
-		}
-		String query="SELECT table_name,'\"'||owner||'\".\"'||table_name||'\"',owner,NVL(num_rows,-1) FROM all_tables WHERE temporary='N' AND secondary='N' AND nested='NO'";
-		if(!nameFilter.isEmpty()) query+=" AND "+nameFilter;
-		if(!schemaFilter.isEmpty()) query+=" AND "+schemaFilter;
 		try{
 			rs=st.executeQuery(query);
 			while(rs.next()){
-				ti=new TabInfo();
-				ti.dbName=rs.getString(1);
-				ti.fullName=rs.getString(2);
-				ti.schema=rs.getString(3);
-				ti.rows=rs.getLong(4);
-				tabs.add(ti);
+				if((schemaFilter == null || rs.getString(3).matches(schemaFilter)) && (nameFilter == null || rs.getString(1).matches(nameFilter))){
+					ti=new TabInfo();
+					ti.dbName=rs.getString(1);
+					ti.fullName=rs.getString(2);
+					ti.schema=rs.getString(3);
+					ti.rows=rs.getLong(4);
+					tabs.add(ti);
+				}
 			}
 			rs.close();
 		}finally{
@@ -57,10 +52,10 @@ public class ORACLE implements Adapter {
 		Statement st=conn.createStatement();
 		ResultSet rs=null;
 		try{
-			if(schema==null||schema.isEmpty()){
-				rs=st.executeQuery("SELECT column_name FROM user_cons_columns cc JOIN user_constraints c ON cc.owner=c.owner AND cc.table_name=c.table_name AND cc.constraint_name=c.constraint_name AND c.constraint_type='P' AND c.table_name='"+table+"'");
+			if(schema == null){
+				rs = st.executeQuery("SELECT column_name FROM user_cons_columns cc JOIN user_constraints c ON cc.owner=c.owner AND cc.table_name=c.table_name AND cc.constraint_name=c.constraint_name AND c.constraint_type='P' AND c.table_name='"+table+"'");
 			}else{
-				rs=st.executeQuery("SELECT column_name FROM all_cons_columns cc JOIN all_constraints c ON cc.owner=c.owner AND cc.table_name=c.table_name AND cc.constraint_name=c.constraint_name AND c.constraint_type='P' AND c.owner='"+schema+"' AND c.table_name='"+table+"'");
+				rs = st.executeQuery("SELECT column_name FROM all_cons_columns cc JOIN all_constraints c ON cc.owner=c.owner AND cc.table_name=c.table_name AND cc.constraint_name=c.constraint_name AND c.constraint_type='P' AND c.owner='"+schema+"' AND c.table_name='"+table+"'");
 			}
 			int i = 0;
 			while(rs.next()){
@@ -87,7 +82,7 @@ public class ORACLE implements Adapter {
 		Statement st=conn.createStatement();
 		ResultSet rs=null;
 		try{
-			if(schema==null||schema.isEmpty()){
+			if(schema == null){
 				rs=st.executeQuery("SELECT iot_type FROM user_tables WHERE table_name='"+table+"'");
 			}else{
 				rs=st.executeQuery("SELECT iot_type FROM all_tables WHERE owner='"+schema+"' AND table_name='"+table+"'");
@@ -140,27 +135,21 @@ public class ORACLE implements Adapter {
 		Statement st=conn.createStatement();
 		ResultSet rs=null;
 
-		nameFilter=nameFilter==null?"":nameFilter.trim();
-		if(!nameFilter.isEmpty()){
-			nameFilter=nameFilter.replaceAll("(?<!\\\\)\\?","").equals(nameFilter)?"(COLUMN_NAME='"+nameFilter+"')":"("+nameFilter.replaceAll("(?<!\\\\)\\?","COLUMN_NAME")+")";
-			nameFilter=nameFilter.replaceAll("\\\\\\?","\\?");
-		}
-		String query="SELECT column_name FROM all_tab_cols WHERE hidden_column='NO' AND virtual_column='NO' AND table_name='"+table+"' AND owner='"+schema+"'";
-		if(!nameFilter.isEmpty()) query+=" AND "+nameFilter;
-		query+=" ORDER BY column_id";
-		
+		String query = "SELECT column_name FROM all_tab_cols WHERE hidden_column='NO' AND virtual_column='NO' AND table_name='"+table+"' AND owner='"+schema+"' ORDER BY column_id";
 		try{
 			rs=st.executeQuery(query);
 			int i = 0;
 			while(rs.next()){
-				ColInfo ci=new ColInfo();
-				ci.colIdx = ++i;
-				ci.dbName=rs.getString(1);
-				ci.fullName="\""+ci.dbName+"\"";
-				ci.alias = ci.dbName.toUpperCase();
-				ci.hashIdx = 1;
-				ci.keyIdx = 0;
-				ci.confSrcTabColIdx = -1;
+				if(nameFilter == null || rs.getString(1).matches(nameFilter)) {
+					ColInfo ci=new ColInfo();
+					ci.colIdx = ++i;
+					ci.dbName=rs.getString(1);
+					ci.fullName="\""+ci.dbName+"\"";
+					ci.alias = ci.dbName.toUpperCase();
+					ci.hashIdx = 1;
+					ci.keyIdx = 0;
+					ci.confSrcTabColIdx = -1;
+				}
 			}
 			rs.close();
 		}finally{

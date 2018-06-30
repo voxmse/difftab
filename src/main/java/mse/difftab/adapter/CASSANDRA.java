@@ -12,7 +12,9 @@ import java.sql.ResultSet;
 import mse.difftab.Adapter;
 import mse.difftab.TabInfo;
 
-public class MONGODB implements Adapter {
+public class CASSANDRA implements Adapter {
+	private static final String CURRENT_KEYSPACE = "CURRENT_KEYSPACE";
+
 	@Override
 	public List<TabInfo> getTables(Connection conn,String schemaFilter,String nameFilter)throws Exception {
 		List<TabInfo>tabs=new ArrayList<TabInfo>(); 
@@ -20,27 +22,22 @@ public class MONGODB implements Adapter {
 		ResultSet rs=null;
 		TabInfo ti;
 
+//		if(schemaFilter == null){
+//			schemaFilter = getCurrentKeySpace(conn);
+//		}
+		String query="select keyspace_name,table_name from system_schema.tables";
 		try{
-			rs=st.executeQuery("{listCollections:1}");
+			rs = st.executeQuery(query);
 			while(rs.next()){
 				@SuppressWarnings("unchecked")
-				Map<String,Object> collectionInfo = (Map<String,Object>)rs.getObject(1);
-				if(nameFilter == null || ((String)collectionInfo.get("name")).matches(nameFilter)) {
+				Map<String,Object> rowData = (Map<String,Object>)rs.getObject(1);
+				if((schemaFilter == null || (rowData.get("keyspace_name") != null && ((String)rowData.get("keyspace_name")).matches(schemaFilter))) && (nameFilter == null || (rowData.get("table_name") != null && ((String)rowData.get("table_name")).matches(nameFilter)))) {
 					ti = new TabInfo();
-					ti.dbName = (String)collectionInfo.get("name");
-					ti.fullName = ti.dbName;
-					ti.schema = null;
+					ti.dbName = (String)rowData.get("table_name");
+					ti.fullName = (String)rowData.get("keyspace_name") + "." + (String)rowData.get("table_name");
+					ti.schema = (String)rowData.get("keyspace_name");
+					ti.rows = -1;
 					tabs.add(ti);
-				}
-			}
-			rs.close();
-			
-			for(TabInfo ti2 : tabs) {
-				rs=st.executeQuery("{collStats :'"+ti2.dbName+"'}");
-				if(rs.next()) {
-					@SuppressWarnings("unchecked")
-					Map<String,Object> collectionStats = (Map<String,Object>)rs.getObject(1);
-					ti2.rows=(Integer)collectionStats.get("count");
 				}
 			}
 			rs.close();
@@ -51,35 +48,28 @@ public class MONGODB implements Adapter {
 		return tabs;
 	}
 
+	@SuppressWarnings("unchecked")
 	private List<ColInfo> getPK(Connection conn,String schema,String table)throws Exception {
 		List<ColInfo>cols=new ArrayList<ColInfo>();
-		Statement st=conn.createStatement();
-		ResultSet rs=null;
+		Statement st = null;
+		ResultSet rs = null;
+		Map<String,Object> rowData;
 		try{
-			rs=st.executeQuery("{listIndexes :'"+table+"'}");
+			st = conn.createStatement();
+			rs = st.executeQuery("SELECT keyspace_name,table_name,column_name,kind FROM system_schema.columns"); 
 			while(rs.next()){
-				@SuppressWarnings("unchecked")
-				Map<String,Object> indexInfo = (Map<String,Object>)rs.getObject(1);
-				if(indexInfo.containsKey("unique") && (Boolean)indexInfo.get("unique") && !(indexInfo.containsKey("sparse") && (Boolean)indexInfo.get("sparse"))) {
-					@SuppressWarnings("unchecked")
-					Map<String,Object> keys = (Map<String,Object>)indexInfo.get("key");
-					if(keys.size()>1 || !keys.containsKey("_id")) {
-						ColInfo ci;
-						int i = 0;
-						for(String key : keys.keySet()) {
-							ci=new ColInfo();
-							ci.colIdx = ++i;
-							ci.dbName = key;
-							ci.fullName = key;
-							ci.alias = ci.dbName.toUpperCase();
-							ci.hashIdx = 1;
-							ci.keyIdx = 1;
-							ci.jdbcClassName = "MAP_AS_COLUMNSET";
-							ci.confSrcTabColIdx = -1;
-							cols.add(ci);
-						}
-						break;
-					}
+				rowData = (Map<String,Object>)rs.getObject(1);
+				if(rowData.get("keyspace_name") != null && schema.equals(rowData.get("keyspace_name")) && rowData.get("table_name") != null && table.equals(rowData.get("table_name")) && (rowData.get("kind") != null && ("partition_key".equals(rowData.get("kind")) || "clustering".equals(rowData.get("kind")))) && !cols.contains(rowData.get("column_name"))) {
+					ColInfo ci = new ColInfo();
+					ci.colIdx = cols.size() + 1;
+					ci.dbName = (String)rowData.get("column_name");
+					ci.fullName = ci.dbName;
+					ci.alias = ci.dbName.toUpperCase();
+					ci.hashIdx = 1;
+					ci.keyIdx = 1;
+					ci.jdbcClassName = "MAP_AS_COLUMNSET";
+					ci.confSrcTabColIdx = -1;
+					cols.add(ci);
 				}
 			}
 		}finally{
@@ -90,18 +80,7 @@ public class MONGODB implements Adapter {
 	}
 
 	private List<ColInfo> getROWID(Connection conn,String schema,String table)throws Exception {
-		List<ColInfo>cols=new ArrayList<ColInfo>();
-		ColInfo ci=new ColInfo();
-		ci.colIdx = 1;
-		ci.dbName = "_id";
-		ci.fullName = "_id";
-		ci.alias = ci.dbName.toUpperCase();
-		ci.hashIdx = 0;
-		ci.keyIdx = 1;
-		ci.jdbcClassName = MAP_AS_COLUMNSET;
-		ci.confSrcTabColIdx = -1;
-		cols.add(ci);
-		return cols;		
+		return new ArrayList<ColInfo>();	
 	}
 
 	@Override
@@ -144,16 +123,10 @@ public class MONGODB implements Adapter {
 	
 	@Override
 	public String getQuery(Connection conn, String schema, String table, List<ColInfo> columns){
-		boolean selectedColumnsOnly = columns.stream().filter(ci -> ci.dbName.equals(ColInfo.OVERALL_COLUMN_NAME) && ci.hashIdx<=0 && ci.keyIdx<=0).count()>0;
-		long notIdExcludedColumns = columns.stream().filter(ci -> !ci.dbName.equals(ColInfo.OVERALL_COLUMN_NAME) && !ci.dbName.equals("_id") && ci.hashIdx<=0 && ci.keyIdx<=0).count();
-		long includedColumns = columns.stream().filter(ci -> !ci.dbName.equals(ColInfo.OVERALL_COLUMN_NAME) && (ci.hashIdx>0 || ci.keyIdx>0)).count();
-
-		if(selectedColumnsOnly && ((notIdExcludedColumns==0 && includedColumns>0)||(notIdExcludedColumns>0 && includedColumns==0))){
-			return "{find:\""+table+"\",projection:{"+
-					columns.stream().filter(ci -> !ci.dbName.equals(ColInfo.OVERALL_COLUMN_NAME)).map(ci -> ci.fullName+":"+((ci.keyIdx>0||ci.hashIdx>0)?"1":"0")).collect(Collectors.joining(","))+
-					"}}";
+		if(columns==null || columns.isEmpty() || columns.stream().anyMatch(ci -> ColInfo.OVERALL_COLUMN_NAME.equals(ci.alias) && (ci.hashIdx>0 || ci.keyIdx>0))){
+			return "SELECT * FROM "+(schema==null?"":(schema+"."))+table;
 		}else{
-			return "{find:\""+table+"\"}";
+			return "SELECT "+columns.stream().map(ci -> ci.fullName).collect(Collectors.joining(","))+" FROM "+(schema==null?"":(schema+"."))+table;
 		}
 	}
 	
@@ -173,5 +146,16 @@ public class MONGODB implements Adapter {
 		return columns;
 	}
 
+	@SuppressWarnings("unused")
+	private String getCurrentKeySpace(Connection conn)throws Exception {
+		Statement st = conn.createStatement();
+		ResultSet rs = st.executeQuery(CURRENT_KEYSPACE);
+		rs.next();
+		@SuppressWarnings("unchecked")
+		String keySpace = (String)((Map<String,Object>)rs.getObject(1)).get(CURRENT_KEYSPACE);
+		rs.close();
+		st.close();
+		return keySpace;
+	}
 
 }

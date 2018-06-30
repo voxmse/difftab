@@ -128,7 +128,7 @@ public class DiffTab {
 				System.exit(2);
 			}
 		} catch (Exception e) {
-			System.err.println(e.getMessage());
+			System.err.println(e.getMessage()+(e.getCause()!=null?(":"+e.getCause().getMessage()):""));
 			if(args.length>=3)e.printStackTrace();
 			System.exit(2);
 		}
@@ -1289,17 +1289,18 @@ public class DiffTab {
         }
 
         // load driver
-        String jdbcDriverClassName = null;
+		Driver jdbcDriver = null;
         for(String driver : drivers) {
 			try{
-				if(((Driver)Class.forName(driver).newInstance()).acceptsURL(connectionUrl)){
-					jdbcDriverClassName = driver;
+				jdbcDriver = (Driver)Class.forName(driver).newInstance();
+				if(jdbcDriver.acceptsURL(connectionUrl)){
 					break;
 				}
 			}catch(Exception e) {
 			}
 		}
-        if(jdbcDriverClassName == null) {
+
+        if(jdbcDriver == null) {
         	throw new ConfigValidationException("Can not load a situable JDBC driver for the connectionUrl=\""+connectionUrl+"\" for the source \""+srcName+"\".Please check CLASSPATH && connectionUrl");
         }
         

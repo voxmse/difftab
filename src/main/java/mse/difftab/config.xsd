@@ -18,9 +18,9 @@
 										<element name="column" minOccurs="0" maxOccurs="unbounded">
 											<complexType>
 												<!-- To locate the column'(s) in the database.
-												    For example: nameFilter="FIRST_NAME"
-												    The native DB SQL expression may be used with the star symbol instead of a column name.
-													For example: nameFilter="? LIKE '%AMOUNT%'"
+													Using the exact column name matching in case of NoSQL database and (compare="true" or key="true")
+												    Otherwise an Java REGEX pattern may be used here.
+														For example: nameFilter="(?i)^ALL_TAB" searches for a case-insensitive string values LIKE "ALL_TAB%"
 												-->
 												<attribute name="nameFilter" type="string" use="optional"></attribute>
 
@@ -45,12 +45,12 @@
 
 									<!-- To locate the table'(s) in the database.
 										For example: nameFilter="MA_TABLE"
-										The native DB SQL expression may be used with the star symbol instead of a table name.
-										For example: nameFilter="? LIKE '%ALL\_%' ESCAPE '\'"
+										An Java REGEX pattern may be used here.
 									-->
 									<attribute name="nameFilter" type="string" use="optional"></attribute>
 
-									<!-- To locate the table'(s) in the database. -->
+									<!-- To locate the table'(s) in the database. An Java REGEX pattern
+									Oracle,MSSQL,Postgres-schema;MySQL-database,Cassandra-keyspace;MongoDB,CSVDRIVER-not supported -->
 									<attribute name="schemaFilter" type="string" use="optional"></attribute>
 
 									<!-- To "rename" the selected table. Case-insensitive(will be transformed to upper case). -->

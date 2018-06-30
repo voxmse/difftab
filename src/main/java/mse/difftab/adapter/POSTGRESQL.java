@@ -22,35 +22,22 @@ public class POSTGRESQL implements Adapter {
 		ResultSet rs=null;
 		TabInfo ti;
 
-		nameFilter=(nameFilter==null)?"":nameFilter.trim();
-		if(!nameFilter.isEmpty()){
-			nameFilter=nameFilter.replaceAll("(?<!\\\\)\\?","").equals(nameFilter)?"(tablename='"+nameFilter+"')":"("+nameFilter.replaceAll("(?<!\\\\)\\?","tablename")+")";
-			nameFilter=nameFilter.replaceAll("\\\\\\?","\\?");
+		String query = "SELECT t.tablename,'\"'||t.schemaname||'\".\"'||t.tablename||'\"',t.schemaname,coalesce(st.n_live_tup,-1) FROM pg_tables t LEFT JOIN pg_stat_all_tables st ON t.schemaname=st.schemaname AND t.tablename=st.relname";
+		if(schemaFilter == null) { 
+			query += " WHERE t.schemaname=current_schema";
 		}
-		schemaFilter=(schemaFilter==null)?"?=current_schema":schemaFilter.trim();
-		if(!schemaFilter.isEmpty()){
-			schemaFilter=schemaFilter.replaceAll("(?<!\\\\)\\?","").equals(schemaFilter)?"(schemaname='"+schemaFilter+"')":"("+schemaFilter.replaceAll("(?<!\\\\)\\?","schemaname")+")";
-			schemaFilter=schemaFilter.replaceAll("\\\\\\?","\\?");
-		}
-		String query="SELECT * FROM("+
-			"SELECT t.tablename,'\"'||t.schemaname||'\".\"'||t.tablename||'\"',t.schemaname,coalesce(st.n_live_tup,-1) FROM pg_tables t LEFT JOIN pg_stat_all_tables st ON t.schemaname=st.schemaname AND t.tablename=st.relname"+
-//			" UNION ALL "+
-//			"SELECT v.viewname,'\"'||v.schemaname||'\".\"'||v.viewname||'\"',v.schemaname,-1 FROM pg_views v"+
-			")t";
-		if(!nameFilter.isEmpty()||!schemaFilter.isEmpty()) query+=" WHERE ";
-		if(!nameFilter.isEmpty()) query+=nameFilter;
-		if(!nameFilter.isEmpty()&&!schemaFilter.isEmpty()) query+=" AND ";
-		if(!schemaFilter.isEmpty()) query+=schemaFilter;
 		try{
 			rs=st.executeQuery(query);
 			while(rs.next()){
-				ti=new TabInfo();
-				ti.dbName=rs.getString(1);
-				ti.fullName=rs.getString(2);
-				ti.schema=rs.getString(3);
-				ti.rows=rs.getLong(4);
-				if(rs.wasNull()) ti.rows=-1;
-				tabs.add(ti);
+				if((schemaFilter == null || rs.getString(3).matches(schemaFilter)) && (nameFilter == null || rs.getString(1).matches(nameFilter))){
+					ti=new TabInfo();
+					ti.dbName=rs.getString(1);
+					ti.fullName=rs.getString(2);
+					ti.schema=rs.getString(3);
+					ti.rows=rs.getLong(4);
+					if(rs.wasNull()) ti.rows=-1;
+					tabs.add(ti);
+				}
 			}
 			rs.close();
 		}finally{
@@ -137,28 +124,22 @@ public class POSTGRESQL implements Adapter {
 		Statement st=conn.createStatement();
 		ResultSet rs=null;
 
-		nameFilter=nameFilter==null?"":nameFilter.trim();
-		if(!nameFilter.isEmpty()){
-			nameFilter=nameFilter.replaceAll("(?<!\\\\)\\?","").equals(nameFilter)?"(a.attname='"+nameFilter+"')":"("+nameFilter.replaceAll("(?<!\\\\)\\?","a.attname")+")";
-			nameFilter=nameFilter.replaceAll("\\\\\\?","\\?");
-		}
-		String query="SELECT a.attname FROM pg_attribute a JOIN pg_class c ON a.attnum>0 AND c.oid=a.attrelid JOIN pg_tables t ON c.relname=t.tablename JOIN pg_roles r ON c.relowner=r.oid AND r.rolname=t.tableowner AND t.tablename='"+table+"' AND schemaname='"+schema+"'";
-		if(!nameFilter.isEmpty()) query+=" AND "+nameFilter;
-		query+=" WHERE NOT a.attisdropped ORDER BY a.attnum";
-		
+		String query = "SELECT a.attname FROM pg_attribute a JOIN pg_class c ON a.attnum>0 AND c.oid=a.attrelid JOIN pg_tables t ON c.relname=t.tablename JOIN pg_roles r ON c.relowner=r.oid AND r.rolname=t.tableowner AND t.tablename='"+table+"' AND schemaname='"+schema+"' WHERE NOT a.attisdropped ORDER BY a.attnum";
 		try{
 			rs=st.executeQuery(query);
 			int i = 0;
 			while(rs.next()){
-				ColInfo ci=new ColInfo();
-				ci.colIdx = ++i;
-				ci.dbName=rs.getString(1);
-				ci.fullName="\""+ci.dbName+"\"";
-				ci.alias = ci.dbName.toUpperCase();
-				ci.hashIdx = 1;
-				ci.keyIdx = 0;
-				ci.confSrcTabColIdx = -1;
-				cols.add(ci);
+				if(nameFilter == null || rs.getString(1).matches(nameFilter)) {
+					ColInfo ci=new ColInfo();
+					ci.colIdx = ++i;
+					ci.dbName=rs.getString(1);
+					ci.fullName="\""+ci.dbName+"\"";
+					ci.alias = ci.dbName.toUpperCase();
+					ci.hashIdx = 1;
+					ci.keyIdx = 0;
+					ci.confSrcTabColIdx = -1;
+					cols.add(ci);
+				}
 			}
 			rs.close();
 		}finally{
