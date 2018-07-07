@@ -2,16 +2,18 @@ package mse.difftab.hasher;
 
 import mse.difftab.Hasher;
 import java.util.Arrays;
-import org.bson.types.ObjectId;
 
-public class BSON_OBJECTID extends Hasher {
+public class BSON_OBJECTID_USING_REFLECTION extends Hasher {
+	@SuppressWarnings("rawtypes")
+	private final Class[] noparms = {};
+	
 	@Override
 	public void getHash(Object o, byte[] hash, int hashOffset) throws Exception {
 		if(o==null){
 			Arrays.fill(hash, hashOffset, hashOffset + HASH_LENGTH, (byte)0);
 			hash[hashOffset + HASH_LENGTH] = COMPARE_AS_ID_FOR_NULL;
 		}else{
-			final byte[] value=((ObjectId)o).toByteArray();
+			final byte[] value=(byte[])o.getClass().getDeclaredMethod("toByteArray",noparms).invoke(o);
 			if(value.length>0){
 				md.update(value);
 				md.digest(hash, hashOffset, HASH_LENGTH);
@@ -43,7 +45,7 @@ public class BSON_OBJECTID extends Hasher {
 			hash[hashOffset + HASH_LENGTH] = COMPARE_AS_ID_FOR_NULL;
 			return DATA_LEN_TO_RETURN_FOR_NULL;
 		}else{
-			final byte[] value=((ObjectId)o).toByteArray();
+			final byte[] value=(byte[])o.getClass().getDeclaredMethod("toByteArray",noparms).invoke(o);
 			if(value.length>0){
 				md.update(value);
 				md.digest(hash, hashOffset, HASH_LENGTH);

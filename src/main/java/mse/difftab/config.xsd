@@ -27,8 +27,8 @@
 												<!-- To "rename" the selected column. Case-insensitive(will be transformed to upper case). -->
 												<attribute name="alias" type="string" use="optional"></attribute>
 
-												<!-- Is is a "key" column.The "key" columns' data are serialised and used for the report generation to allow you to identify the concerned row
-												    In addition to it "key" columns may be used for the "group_of_rows" matching comparison mode 
+												<!-- Is is a "key" column.The "key" columns' data are serialized and used for the report generation to allow you to identify the concerned row
+												    In addition to it a "key" columns may be used for the "group_of_rows" mode(two-stage, match the "key" columns before and the rest of data after that) 
 												-->
 												<attribute name="key" type="boolean" use="optional"></attribute>
 
@@ -119,6 +119,20 @@
 				</simpleType>
 			</attribute>
 			
+			<!-- Compare for what(match/unmatch) -->
+			<attribute name="matchMode" use="optional" default="UNMATCH">
+				<simpleType>
+					<restriction base="string">
+						<enumeration value="MATCH" />
+						<enumeration value="UNMATCH" />
+						<enumeration value="ALL" />
+					</restriction>
+				</simpleType>
+			</attribute>
+			
+			<!-- Do not take into account the N of repetitions of a row -->
+			<attribute name="compareDistinct" type="boolean" use="optional" default="false"/>
+
 			<!-- Use the "group_of_key_columns" level comparison instead of row-level one -->
 			<attribute name="groupByKey" type="boolean" use="optional" default="false"></attribute>
 			
@@ -147,8 +161,8 @@
 				</simpleType>
 			</attribute>
 			
-			<!-- How many mismatches may be logged -->
-			<attribute name="loggedMismatchesMax" use="optional" default="9223372036854775807">
+			<!-- How many (un)matches may be logged -->
+			<attribute name="loggedDetectionsMax" use="optional" default="9223372036854775807">
 				<simpleType>
 					<restriction base="long">
       					<minInclusive value="0"/>

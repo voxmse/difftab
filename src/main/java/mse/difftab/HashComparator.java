@@ -35,9 +35,12 @@ public class HashComparator extends Thread {
 	private Map<String,Map<String,TabInfo>> tabInfoTree;
 	private BufferedWriter logWriter;
 	private boolean doCompare;
+	private boolean compareDistinct;
+	private boolean logMatched;
+	private boolean logUnmatched;
 	private int[] keys;
-	private SharedValueLong mismatches;
-	private long loggedMismatchesMax;
+	private SharedValueLong detections;
+	private long loggedDetectionsMax;
 	private int trace;
 	private String logColumnSeparator;
 	private String logKeyValueSeparator;
@@ -175,7 +178,7 @@ public class HashComparator extends Thread {
 			if(trace>0){
 				currTs=System.currentTimeMillis();
 				if(((currTs-lastTs)>=trace) || force){
-					app.writeLog("compare:"+tablePartIdx+":"+(rowsTotal-getNotProcessedRowsCount())+" of "+rowsTotal+" rows,"+mismatches.value+" mismatches were detected");
+					app.writeLog("compare:"+tablePartIdx+":"+(rowsTotal-getNotProcessedRowsCount())+" of "+rowsTotal+" rows,"+detections.value+" detections");
 					lastTs=currTs;
 				}
 			}
@@ -778,7 +781,7 @@ public class HashComparator extends Thread {
 		private void selectPartsWithMinHashVal(){
 			partWithMin[0]=true;
 			partMin=0;
-			hashRecCntTotal=hashRecCnt[0];		
+			hashRecCntTotal=compareDistinct?1:hashRecCnt[0];		
 			for(int i=1;i<partWithMin.length;i++){
 				switch(
 					cmp(
@@ -792,11 +795,11 @@ public class HashComparator extends Thread {
 						for(int j=0;j<i;j++) partWithMin[j]=false;
 						partMin=i;
 						partWithMin[i]=true;
-						hashRecCntTotal=hashRecCnt[i];
+						if(compareDistinct)hashRecCntTotal=hashRecCnt[i];
 						break;
 					case 0:						
 						partWithMin[i]=true;
-						hashRecCntTotal+=hashRecCnt[i];
+						if(compareDistinct)hashRecCntTotal+=hashRecCnt[i];
 						break;
 				}
 			}
@@ -958,9 +961,12 @@ public class HashComparator extends Thread {
 		Map<String,File> hashFile,
 		Map<String,File> keyFile,
 		Map<String,Map<String,TabInfo>> tabInfoTree,
+		boolean compareDistinct,
+		boolean logMatched,
+		boolean logUnmatched,
 		boolean doCompare,
-		SharedValueLong mismatches,
-		long loggedMismatchesMax,
+		SharedValueLong detections,
+		long loggedDetectionsMax,
 		BufferedWriter logFile,
 		int trace
 	)throws Exception{
@@ -970,6 +976,9 @@ public class HashComparator extends Thread {
 		this.hashFile=new File[tabInfoTree.size()];
 		this.keyFile=new File[tabInfoTree.size()];
 		this.tabInfoTree=tabInfoTree;
+		this.compareDistinct = compareDistinct;
+		this.logMatched = logMatched;
+		this.logUnmatched = logUnmatched;
 		this.doCompare = doCompare;
 		int i=0;
 		for(String s:tabInfoTree.keySet().stream().sorted().collect(Collectors.toList())) {
@@ -995,8 +1004,8 @@ public class HashComparator extends Thread {
 		this.keys=new int[this.hashFile.length];
 		for(i=0;i<this.hashFile.length;i++) this.keys[i]=getKeyCount(this.tabInfoTree.get(srcName[0]).get(tabAlias));
 		this.agg=new HashAggregator[this.hashFile.length];
-		this.mismatches=mismatches;
-		this.loggedMismatchesMax = loggedMismatchesMax;
+		this.detections=detections;
+		this.loggedDetectionsMax = loggedDetectionsMax;
 		this.trace=trace;
 		this.md = Hasher.getMessageDigestInstance();
 	}
@@ -1105,7 +1114,7 @@ public class HashComparator extends Thread {
 		byte[] keyBuff=new byte[maxKeySize];
 		StringBuilder keyBuffVal=new StringBuilder(maxKeySize);
 		
-		logDiffInit();
+		logDetectionInit();
 	
 		//init
 		aggWithMinCnt=0;
@@ -1180,11 +1189,20 @@ public class HashComparator extends Thread {
 						}
 					}
 					//if data hash mismatch
-					if(dataHashMismatch)
-						logDiff('D',agg,aggWithMin,keyBuff,keyBuffVal);
+					if(dataHashMismatch){
+						if(this.logUnmatched) {
+							logDetection('D',agg,aggWithMin,keyBuff,keyBuffVal);
+						}
+					}else {
+						if(this.logMatched) {
+							logDetection('O',agg,aggWithMin,keyBuff,keyBuffVal);
+						}
+					}
 				}else{
 					//if key hash mismatch
-					logDiff(groupByKey?'K':'D',agg,aggWithMin,keyBuff,keyBuffVal);
+					if(this.logUnmatched) {
+						logDetection(groupByKey?'K':'D',agg,aggWithMin,keyBuff,keyBuffVal);
+					}
 				}
 			}
 			
@@ -1204,7 +1222,7 @@ public class HashComparator extends Thread {
 		app.writeLog("compare:"+tablePartIdx+":compare is finished");		
 	}
 	
-	protected void logDiffInit() throws Exception{
+	protected void logDetectionInit() throws Exception{
 		if(logPrintHeader) {
 			if(groupByKey) {
 				logWriter.write("type"+logColumnSeparator+getKeyAliasList(tabInfoTree.get(srcName[0]).get(tabAlias))+logColumnSeparator);
@@ -1220,9 +1238,9 @@ public class HashComparator extends Thread {
 		}
 	}
 	
-	private synchronized void logDiff(char why,HashAggregator[] agg,boolean[] aggWithMin,byte[] keyBuff,StringBuilder keyBuffVal)throws Exception{
+	private synchronized void logDetection(char why,HashAggregator[] agg,boolean[] aggWithMin,byte[] keyBuff,StringBuilder keyBuffVal)throws Exception{
 		int i;
-		if(++mismatches.value<=loggedMismatchesMax) {
+		if(++detections.value<=loggedDetectionsMax) {
 			if(groupByKey) {
 				logWriter.append(why+logColumnSeparator);
 				for(i=0;i<agg.length;i++)

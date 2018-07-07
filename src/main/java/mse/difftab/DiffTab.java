@@ -76,6 +76,9 @@ public class DiffTab {
 		COMPARE, COMPARE_KEEP_FILES, PREPARE_FILES_NOSORT, PREPARE_FILES_SORT, DISPLAY_CHECK_SUM
 	};
 
+	public enum MatchMode {
+		MATCH, UNMATCH, ALL
+	};
 	
 	static final int HASHER_BUFFER_SIZE = 128 * 1024;
 	static final int LOG_BUFFER_SIZE = 128 * 1024;
@@ -283,7 +286,7 @@ public class DiffTab {
 			// scope
 			Scope scope = Enum.valueOf(Scope.class, config.getScope());
 			long rowsDefault = config.getRows();
-			long loggedMismatchesMaxDefault = config.getLoggedMismatchesMax();
+			long loggedDetectionsMaxDefault = config.getLoggedDetectionsMax();
 			boolean groupByKeyDefault = config.isGroupByKey();
 
 			// get tables
@@ -307,7 +310,7 @@ public class DiffTab {
 							adapter.get(sourceDb.getName()),
 							scope,
 							rowsDefault,
-							loggedMismatchesMaxDefault,
+							loggedDetectionsMaxDefault,
 							groupByKeyDefault
 						)
 					);
@@ -389,9 +392,12 @@ public class DiffTab {
 							hashFile, 
 							keyFile, 
 							tabInfoTree, 
+							config.isCompareDistinct(),
+							MatchMode.MATCH == Enum.valueOf(MatchMode.class, config.getMatchMode()) || MatchMode.ALL == Enum.valueOf(MatchMode.class, config.getMatchMode()),
+							MatchMode.UNMATCH == Enum.valueOf(MatchMode.class, config.getMatchMode())  || MatchMode.ALL == Enum.valueOf(MatchMode.class, config.getMatchMode()),
 							Action.valueOf(config.getAction())!=Action.DISPLAY_CHECK_SUM,
 							mismatches,
-							loggedMismatchesMaxDefault,
+							loggedDetectionsMaxDefault,
 							diffWriter, 
 							trace
 						);
@@ -428,7 +434,7 @@ public class DiffTab {
 						if(isDisplayCheckSum()) cmps[0].getTableHash().entrySet().stream().sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey())).forEach(e -> displayLog("CheckSum:"+e.getKey()+":"+tabAlias+":"+e.getValue()));
 					
 						if(Action.valueOf(config.getAction())!=Action.DISPLAY_CHECK_SUM) {
-							displayLog(String.valueOf(mismatches.value) + " mismatches have been detected");
+							displayLog(String.valueOf(mismatches.value) + " detections have been made");
 						}
 						diffWriter.close();
 						
@@ -480,7 +486,7 @@ public class DiffTab {
 	private void normalizeTabInfo(
 		List<TabInfo> tabs, 
 		long rowsDefault,
-		long loggedMismatchesMaxDefault,
+		long loggedDetectionsMaxDefault,
 		boolean groupByKeyDefault
 	) {
 		for(TabInfo ti : tabs) {
@@ -497,7 +503,7 @@ public class DiffTab {
 			Adapter adapter,
 			Scope scope, 
 			long rowsDefault,
-			long loggedMismatchesMaxDefault,
+			long loggedDetectionsMaxDefault,
 			boolean groupByKeyDefault
 	) throws Exception {
 		List<TabInfo> tabs = null;
@@ -508,7 +514,7 @@ public class DiffTab {
 			case SCHEMA_COMMON:
 				// load table info for the whole schema
 				tabs = adapter.getTables(conn, source.getSchema(), null);
-				normalizeTabInfo(tabs, rowsDefault, loggedMismatchesMaxDefault, groupByKeyDefault);
+				normalizeTabInfo(tabs, rowsDefault, loggedDetectionsMaxDefault, groupByKeyDefault);
 				break;
 			case SCHEMA_SELECTED:
 				// empty list of tables
@@ -526,7 +532,7 @@ public class DiffTab {
 					tabConf.getSchemaFilter() == null ? source.getSchema() : tabConf.getSchemaFilter(),
 					tabConf.getNameFilter()
 				);
-				normalizeTabInfo(tabs2, rowsDefault, loggedMismatchesMaxDefault, groupByKeyDefault);
+				normalizeTabInfo(tabs2, rowsDefault, loggedDetectionsMaxDefault, groupByKeyDefault);
 				
 				// list of names of tables loaded from the DB
 				final Set<String> tabs2_ = tabs2.stream().map(ti -> ti.fullName).collect(Collectors.toSet());
