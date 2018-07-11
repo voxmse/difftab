@@ -781,7 +781,7 @@ public class HashComparator extends Thread {
 		private void selectPartsWithMinHashVal(){
 			partWithMin[0]=true;
 			partMin=0;
-			hashRecCntTotal=compareDistinct?1:hashRecCnt[0];		
+			hashRecCntTotal=hashRecCnt[0];		
 			for(int i=1;i<partWithMin.length;i++){
 				switch(
 					cmp(
@@ -795,11 +795,11 @@ public class HashComparator extends Thread {
 						for(int j=0;j<i;j++) partWithMin[j]=false;
 						partMin=i;
 						partWithMin[i]=true;
-						if(compareDistinct)hashRecCntTotal=hashRecCnt[i];
+						hashRecCntTotal=hashRecCnt[i];
 						break;
 					case 0:						
 						partWithMin[i]=true;
-						if(compareDistinct)hashRecCntTotal+=hashRecCnt[i];
+						if(!compareDistinct)hashRecCntTotal+=hashRecCnt[i];
 						break;
 				}
 			}
@@ -897,7 +897,7 @@ public class HashComparator extends Thread {
 					return;
 				}
 				hashRecIdx[partIdx]++;
-				hashRecCnt[partIdx]++;
+				if(!compareDistinct)hashRecCnt[partIdx]++;
 			}
 			//now the end of the buffer is arrived
 				
@@ -1088,6 +1088,8 @@ public class HashComparator extends Thread {
 		if(sortBuffer==null) throw new RuntimeException("Can not allocate sort memory");
 		
 		for(int i=0;i<hashFile.length;i++) agg[i]=new HashAggregator(i,sortBuffer,trace);
+		sortBuffer=null;
+		MemMan.gc();
 	}
 	
 	public void execute()throws Exception{

@@ -95,7 +95,6 @@ public class DiffTab {
 
 	Map<String,Adapter> adapter;
 	Map<String,Connection> conn;
-	Map<String,Prepared> prep;
 
 	public DiffTab(Config config, File workDir, int trace) throws Exception {
 		this.config = config;
@@ -294,7 +293,7 @@ public class DiffTab {
 				if(isPrepared(source)) {
 					// for Prepared sources
 					Config.SourcePrepared sourcePrepared = (Config.SourcePrepared)source;
-					
+
 					tabInfoTree.put(
 						sourcePrepared.getName(),
 						getTablesForSourcePrepared(sourcePrepared)
@@ -385,6 +384,7 @@ public class DiffTab {
 							hashFile.put(srcName, getFile(ContentType.HASH_OF_DATA_COLUMNS, srcName, tabAlias, tableHashPartIdx));
 							keyFile.put(srcName, getFile(ContentType.SERIALIZED_KEY_COLUMNS, srcName, tabAlias, tableHashPartIdx));
 						}
+					
 						cmps[tableHashPartIdx] = new HashComparator(
 							this, 
 							tabAlias, 
@@ -934,7 +934,7 @@ public class DiffTab {
 			// for each column
 			for(String colAlias : allColsOfTabFromAllSources) {
 				// for SQL sources only : how many distinct hasher classes exist for a given column alias
-				if(tabInfoTree.keySet().stream().filter(sourceName->adapter.get(sourceName).ColumnSetAndDataTypesAreFixed()).map(sourceName -> getCompareAs(tabInfoTree.get(sourceName).get(commonTabAlias).columns.get(colAlias).hasherClassName)).distinct().count() > 1) 
+				if(tabInfoTree.keySet().stream().filter(sourceName -> adapter.containsKey(sourceName) && adapter.get(sourceName).ColumnSetAndDataTypesAreFixed()).map(sourceName -> getCompareAs(tabInfoTree.get(sourceName).get(commonTabAlias).columns.get(colAlias).hasherClassName)).distinct().count() > 1) 
 					throw new ConfigValidationException("tableAlias=\"" + commonTabAlias + "\",columnAlias=\"" + colAlias + "\" hasher class name is not unique"); 
 			}
 		}
@@ -988,12 +988,15 @@ public class DiffTab {
 							tabInfoTree.get(srcName).get(commonTabAlias).columns.get(colAlias).keyIdx = colIdx++;
 					}
 				// check keyId of all key columns of prepared sources 
-				for(String srcName : tabInfoTree.keySet()) 
+				for(String srcName : tabInfoTree.keySet()) {
 					if(isPrepared(tabInfoTree.get(srcName).get(commonTabAlias))) {
 						colIdx = 1;
-						for(String colAlias : tabInfoTree.get(srcName).get(commonTabAlias).columns.entrySet().stream().filter(el -> el.getValue().keyIdx > 0).map(el -> el.getKey()).sorted().collect(Collectors.toList()))
+						for(String colAlias : tabInfoTree.get(srcName).get(commonTabAlias).columns.entrySet().stream().filter(el -> el.getValue().keyIdx > 0).map(el -> el.getKey()).sorted().collect(Collectors.toList())){
 							if(tabInfoTree.get(srcName).get(commonTabAlias).groupByKey && tabInfoTree.get(srcName).get(commonTabAlias).columns.get(colAlias).keyIdx != colIdx) {
 								throw new ConfigValidationException("Invalid value of keyIdx for the \""+colAlias+"\" column of the \""+commonTabAlias+"\" table in the \""+srcName+"\" source.The correct value should be "+colIdx);
+							}
+							colIdx++;
+						}
 					}
 				}
 			}
