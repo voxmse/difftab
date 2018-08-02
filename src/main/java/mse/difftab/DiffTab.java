@@ -14,6 +14,7 @@ import java.sql.Statement;
 import java.io.File;
 import java.io.OutputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.BufferedOutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
@@ -21,7 +22,6 @@ import java.io.StringWriter;
 import java.math.BigInteger;
 import java.io.BufferedWriter;
 import java.nio.file.Files;
-import java.nio.file.StandardOpenOption;
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.Marshaller;
 import javax.xml.bind.Unmarshaller;
@@ -434,7 +434,7 @@ public class DiffTab {
 						if(isDisplayCheckSum()) cmps[0].getTableHash().entrySet().stream().sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey())).forEach(e -> displayLog("CheckSum:"+e.getKey()+":"+tabAlias+":"+e.getValue()));
 					
 						if(Action.valueOf(config.getAction())!=Action.DISPLAY_CHECK_SUM) {
-							displayLog(String.valueOf(mismatches.value) + " detections have been made");
+							displayLog(String.valueOf(mismatches.value) + " detections");
 						}
 						diffWriter.close();
 						
@@ -1136,13 +1136,15 @@ public class DiffTab {
 		// if the estimated file size is zero then return 1
 		if(maxDataSize == 0) return 1;
 
-		// otherwise the result depends on available resources
-		return (int) Math.max(Math.min(
-			// upper limit by memory size
-			Math.ceil((double)MemMan.getMaxFreeMemorySize())/HashComparator.MAX_SORT_BUFFER_SIZE/2/(100+HASH_PARTITION_MARGE_PCT)*100,
-			// upper limit by data size
-			Math.floor(((double)maxDataSize)*(100+HASH_PARTITION_MARGE_PCT)/100)/(HashComparator.MAX_SORT_BUFFER_SIZE)
-		),1);
+		// otherwise the parallel degree
+		return getParallelDegree();
+//		// otherwise the result depends on available resources
+//		return (int) Math.max(Math.min(
+//			// upper limit by memory size
+//			Math.ceil((double)MemMan.getMaxFreeMemorySize())/HashComparator.MAX_SORT_BUFFER_SIZE/2/(100+HASH_PARTITION_MARGE_PCT)*100,
+//			// upper limit by data size
+//			Math.floor(((double)maxDataSize)*(100+HASH_PARTITION_MARGE_PCT)/100)/(HashComparator.MAX_SORT_BUFFER_SIZE)
+//		),1);
 	}
 
 	/**
@@ -1258,10 +1260,15 @@ public class DiffTab {
 		Files.deleteIfExists(f.toPath());
 		return 
 			new BufferedOutputStream(
-				Files.newOutputStream(
-					f.toPath(),
-					StandardOpenOption.CREATE_NEW
-				),
+				new FileOutputStream(f)
+				{
+		            @Override
+		            public void close()throws IOException {
+				        getFD().sync();
+		                super.close();
+		            }
+				}
+				,
 				bufferSize
 			);
 	}

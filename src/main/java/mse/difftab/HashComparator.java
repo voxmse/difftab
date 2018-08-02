@@ -23,8 +23,6 @@ public class HashComparator extends Thread {
     static final int MAX_CMP_BUFFER_SIZE=128*1024;
     static final int MIN_CMP_BUFFER_SIZE=2*1024;
     
-    private static final String sortLock = "";
-	
 	private int tablePartIdx;
     private DiffTab app;
     private String[] srcName;
@@ -134,9 +132,7 @@ public class HashComparator extends Thread {
 				lastTs=System.currentTimeMillis();
 				for(int i=0;i<chunk.length;i++){
 					loadHash(hashFile[srcIdx],chunk[i].head,(int)(chunk[i].tail-chunk[i].head+1),sortBuffer[0],0);
-					synchronized(sortLock){
-						parallelSort(sortBuffer[0],(int)(chunk[i].tail-chunk[i].head+1),sortBuffer[1]);
-					}
+					parallelSort(sortBuffer[0],(int)(chunk[i].tail-chunk[i].head+1),sortBuffer[1]);
 					saveHash(hashFile[srcIdx],chunk[i].head,(int)(chunk[i].tail-chunk[i].head+1),sortBuffer[0]);
 					sortTrace(i);
 				}
@@ -234,6 +230,9 @@ public class HashComparator extends Thread {
 	     * @param workLen usable size of work array
 	     */
 	    void sort(byte[] a, int left, int right, byte[] work, int workBase, int workLen) {
+	    	// set priority
+	    	Thread.currentThread().setPriority(Thread.MIN_PRIORITY);
+	    	
 	    	// Use Quicksort on small arrays
 	        if (right - left < QUICKSORT_THRESHOLD) {
 	            sort(a, left, right, true);
@@ -625,6 +624,9 @@ public class HashComparator extends Thread {
             }
 
 	        public final void compute() {
+		    	// set priority
+		    	Thread.currentThread().setPriority(Thread.MIN_PRIORITY);
+	        	
 	        	byte[] split=new byte[HASH_RECORD_SIZE];
                 byte[] a = this.a, w = this.w;
 	            int lb = this.lbase, ln = this.lsize, rb = this.rbase, rn = this.rsize, k = this.wbase, g = this.gran;
@@ -942,7 +944,8 @@ public class HashComparator extends Thread {
 			try{
 				f=new RandomAccessFile(hashFile,"rwd");
 				f.seek(offset*HASH_RECORD_SIZE);
-				f.write(ha_,0,hashes*HASH_RECORD_SIZE); 
+				f.write(ha_,0,hashes*HASH_RECORD_SIZE);
+				f.getFD().sync();
 			}finally{
 				try{f.close();}catch(Exception e){}
 			}			
@@ -1012,6 +1015,7 @@ public class HashComparator extends Thread {
 	
 	public void run(){
 		try{
+//			prepare();
 			execute();
 		}catch(Exception e){
 //	    	e.printStackTrace();

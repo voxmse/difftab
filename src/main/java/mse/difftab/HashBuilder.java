@@ -51,10 +51,11 @@ class HashBuilder extends Thread {
     	this.arrSz = arrSz;
     	this.colsToRead = colsToRead;
     	this.hasher = new Hasher[hasherClassName.length];
+    	MessageDigest md = Hasher.getMessageDigestInstance();
     	for(int i=0;i<this.hasher.length;i++) {
    			hasher[i] = (Hasher) Class.forName(hasherClassName[i]).newInstance();
    			hasher[i].setInfo(ti, colName[i]);
-   			hasher[i].setMessageDigest(Hasher.getMessageDigestInstance());
+   			hasher[i].setMessageDigest(md);
     	}
     	this.colOffset = colOffset;
     	this.dataLength = dataLength;
