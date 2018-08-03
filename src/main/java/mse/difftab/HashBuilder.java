@@ -146,7 +146,7 @@ class HashBuilder extends Thread {
 			  				}
 		  				}
 		  			}
-		  			hasher[i].free(arr[currPos+colOffset[i]]);
+//		  			hasher[i].free(arr[currPos+colOffset[i]]);
 	        	}
 
 	  			currPos+=colsToRead;

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cmp:config xmlns:cmp="http://mse.difftab" groupByKey="true" action="COMPARE">
+  <sourceDb name="TheFirstDb" connectionUrl="jdbc:oracle:thin:@//localhost:1521/msepdb;defaultRowPrefetch=1000;user=MSE;password=pwd">
+    <table alias="TABLE01">
+	  <query>
+		<![CDATA[
+WITH
+	t1 AS(SELECT/*+MATERIALIZE*/owner,object_name,object_type,created,data_object_id,status FROM dba_objects),
+	t2 AS(SELECT/*+MATERIALIZE*/LEVEL rn FROM dual CONNECT BY LEVEL<=452),
+    t3 AS(SELECT/*+MATERIALIZE*/rn,owner,object_name,object_type,created,data_object_id,status FROM t1 CROSS JOIN t2 ORDER BY 1,2,3,4)
+SELECT 1 batch,t3.* FROM t3 
+UNION ALL
+SELECT 2 batch,t3.* FROM t3
+UNION ALL
+SELECT 3 batch,t3.* FROM t3
+UNION ALL
+SELECT 4 batch,t3.* FROM t3
+UNION ALL
+SELECT 5 batch,t3.* FROM t3
+UNION ALL
+SELECT 6 batch,t3.* FROM t3
+UNION ALL
+SELECT 7 batch,t3.* FROM t3
+UNION ALL
+SELECT 8 batch,t3.* FROM t3
+UNION ALL
+SELECT 9 batch,t3.* FROM t3
+UNION ALL
+SELECT 10 batch,t3.* FROM t3
+		]]>
+	  </query>
+	  <column nameFilter="BATCH" key="true"/>	  
+	  <column nameFilter="RN" key="true"/>
+	  <column nameFilter="OWNER" key="true"/>
+	  <column nameFilter="OBJECT_NAME" key="true"/>
+	  <column nameFilter="OBJECT_TYPE" key="true"/>
+	</table>
+  </sourceDb>
+  <sourceDb name="TheSecondDb" connectionUrl="jdbc:oracle:thin:@//localhost:1521/msepdb;defaultRowPrefetch=1000;user=MSE;password=pwd">
+    <table alias="TABLE01" rows="1000000000">
+	  <query>
+		<![CDATA[	  
+WITH
+	t1 AS(SELECT/*+MATERIALIZE*/owner,object_name,object_type,created,data_object_id,status FROM dba_objects),
+	t2 AS(SELECT/*+MATERIALIZE*/LEVEL rn FROM dual CONNECT BY LEVEL<=452),
+    t3 AS(SELECT/*+MATERIALIZE*/rn,owner,object_name,object_type,created,data_object_id,status FROM t1 CROSS JOIN t2 ORDER BY 1 DESC,2 DESC,3 DESC,4 DESC)
+SELECT
+	1 batch,
+	rn,
+	owner,
+	-- key column's value is changed
+	CASE WHEN object_name='DBA_TABLES' AND object_type='SYNONYM' AND owner='PUBLIC' AND rn=1 THEN 'dba_tables' ELSE object_name	END object_name,
+	object_type,
+	-- non-key column's value is changed	
+	CASE WHEN object_name='DBA_VIEWS' AND object_type='VIEW' AND rn=2 THEN NULL WHEN object_name='DBA_TRIGGERS' AND object_type='VIEW' AND rn=3 THEN created+1 ELSE created END created,
+	data_object_id,
+	status
+FROM t3
+WHERE
+	-- a row is deleted
+	NOT(object_name='DIANA' AND object_type='PACKAGE' AND rn=4)
+UNION ALL
+SELECT 2 batch,t3.* FROM t3
+UNION ALL
+SELECT 3 batch,t3.* FROM t3
+UNION ALL
+SELECT 4 batch,t3.* FROM t3
+UNION ALL
+SELECT 5 batch,t3.* FROM t3
+UNION ALL
+SELECT 6 batch,t3.* FROM t3
+UNION ALL
+SELECT 7 batch,t3.* FROM t3
+UNION ALL
+SELECT 8 batch,t3.* FROM t3
+UNION ALL
+SELECT 9 batch,t3.* FROM t3
+UNION ALL
+SELECT 10 batch,t3.* FROM t3
+	]]>
+	  </query>
+	  <column nameFilter="BATCH" key="true"/>	  
+	  <column nameFilter="RN" key="true"/>
+	  <column nameFilter="OWNER" key="true"/>
+	  <column nameFilter="OBJECT_NAME" key="true"/>
+	  <column nameFilter="OBJECT_TYPE" key="true"/> 
+	</table>
+  </sourceDb>
+</cmp:config>

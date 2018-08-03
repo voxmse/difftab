@@ -230,9 +230,6 @@ public class HashComparator extends Thread {
 	     * @param workLen usable size of work array
 	     */
 	    void sort(byte[] a, int left, int right, byte[] work, int workBase, int workLen) {
-	    	// set priority
-	    	Thread.currentThread().setPriority(Thread.MIN_PRIORITY);
-	    	
 	    	// Use Quicksort on small arrays
 	        if (right - left < QUICKSORT_THRESHOLD) {
 	            sort(a, left, right, true);
@@ -624,9 +621,6 @@ public class HashComparator extends Thread {
             }
 
 	        public final void compute() {
-		    	// set priority
-		    	Thread.currentThread().setPriority(Thread.MIN_PRIORITY);
-	        	
 	        	byte[] split=new byte[HASH_RECORD_SIZE];
                 byte[] a = this.a, w = this.w;
 	            int lb = this.lbase, ln = this.lsize, rb = this.rbase, rn = this.rsize, k = this.wbase, g = this.gran;
