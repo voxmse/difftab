@@ -156,10 +156,6 @@ public abstract class Hasher {
 		md.reset();
 	}
 
-	protected static final int getHashBacket(byte[] hash,int buckets){
-		return buckets==1?0:((hash[0]&0xff>>1<<24)+(hash[1]&0xff<<16)+(hash[2]&0xff<<8)+(hash[3]&0xff))%buckets;
-	}
-	
 	private final static char[] hexArray = "0123456789ABCDEF".toCharArray();
 	public static String bytesToHex(byte[] bytes,int offset, int len) {
 	    char[] hexChars = new char[len * 2];

@@ -130,7 +130,7 @@ public class HashComparator extends Thread {
 				// sorting
 				app.writeLog("sort:"+srcName[srcIdx]+"."+tablePartIdx+":sort is started:");
 				lastTs=System.currentTimeMillis();
-				for(int i=0;i<chunk.length;i++){
+				for(int i=chunk.length-1;i>=0;i--){
 					loadHash(hashFile[srcIdx],chunk[i].head,(int)(chunk[i].tail-chunk[i].head+1),sortBuffer[0],0);
 					parallelSort(sortBuffer[0],(int)(chunk[i].tail-chunk[i].head+1),sortBuffer[1]);
 					saveHash(hashFile[srcIdx],chunk[i].head,(int)(chunk[i].tail-chunk[i].head+1),sortBuffer[0]);
@@ -1081,13 +1081,15 @@ public class HashComparator extends Thread {
 		return true;
 	}
 
-	void prepare()throws Exception{
+	void prepare(boolean init)throws Exception{
 		byte[][] sortBuffer=allocateSortBuffer(hashFile);
 		if(sortBuffer==null) throw new RuntimeException("Can not allocate sort memory");
 		
 		for(int i=0;i<hashFile.length;i++) agg[i]=new HashAggregator(i,sortBuffer,trace);
 		sortBuffer=null;
 		MemMan.gc();
+		
+		logDetectionInit(init);
 	}
 	
 	public void execute()throws Exception{
@@ -1114,8 +1116,6 @@ public class HashComparator extends Thread {
 		byte[] keyBuff=new byte[maxKeySize];
 		StringBuilder keyBuffVal=new StringBuilder(maxKeySize);
 		
-		logDetectionInit();
-	
 		//init
 		aggWithMinCnt=0;
 		aggWithMinFirst=0;
@@ -1222,8 +1222,8 @@ public class HashComparator extends Thread {
 		app.writeLog("compare:"+tablePartIdx+":compare is finished");		
 	}
 	
-	protected void logDetectionInit() throws Exception{
-		if(logPrintHeader) {
+	protected void logDetectionInit(boolean init) throws Exception{
+		if(init && logPrintHeader) {
 			if(groupByKey) {
 				logWriter.write("type"+logColumnSeparator+getKeyAliasList(tabInfoTree.get(srcName[0]).get(tabAlias))+logColumnSeparator);
 				for(int i=0;i<srcName.length;i++)

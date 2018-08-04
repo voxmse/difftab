@@ -24,7 +24,9 @@ class HashBuilder extends Thread {
 	private int[] colOffset;
 	private boolean[] isHash;
 	private boolean[] isKey;
-
+	private TabInfo ti;
+	private String[] hasherClassName;
+	private String[] colName;
 	
     public HashBuilder(
     	DiffTab app,
@@ -44,19 +46,15 @@ class HashBuilder extends Thread {
     	OutputStream[] hashOutK,
     	SharedValueLong[] keyFilePos,
     	Semaphore sem
-    )throws Exception{
+    ){
     	this.app = app;
     	this.srcName = srcName;
+    	this.ti = ti;
     	this.arr = arr;
     	this.arrSz = arrSz;
     	this.colsToRead = colsToRead;
-    	this.hasher = new Hasher[hasherClassName.length];
-    	MessageDigest md = Hasher.getMessageDigestInstance();
-    	for(int i=0;i<this.hasher.length;i++) {
-   			hasher[i] = (Hasher) Class.forName(hasherClassName[i]).newInstance();
-   			hasher[i].setInfo(ti, colName[i]);
-   			hasher[i].setMessageDigest(md);
-    	}
+    	this.colName = colName;
+    	this.hasherClassName = hasherClassName;
     	this.colOffset = colOffset;
     	this.dataLength = dataLength;
     	this.isHash = isHash;
@@ -69,16 +67,23 @@ class HashBuilder extends Thread {
     }
 	
 	public void run(){
-		int i;
 		int currPos = 0;
     	int dataLen;
     	int dataPos;
-    	long keyFilePos_;
     	int bucket;
+    	int i;
 
     	MessageDigest mdHash=null;
     	MessageDigest mdKey=null;
 		try {
+	    	hasher = new Hasher[hasherClassName.length];
+			MessageDigest md = Hasher.getMessageDigestInstance();
+	    	for(i=0;i<this.hasher.length;i++) {
+	   			hasher[i] = (Hasher) Class.forName(hasherClassName[i]).newInstance();
+	   			hasher[i].setInfo(ti, colName[i]);
+	   			hasher[i].setMessageDigest(md);
+	    	}
+
 			mdHash = Hasher.getMessageDigestInstance();
 	    	mdKey = Hasher.getMessageDigestInstance();
 		} catch (Exception e1) {
@@ -91,8 +96,9 @@ class HashBuilder extends Thread {
     	boolean hashIsPresent=false;
     	for(boolean b : isHash) hashIsPresent = hashIsPresent || b;
  	
-    	int keyFilePosInBufferOutH=Hasher.HASH_LENGTH+(groupByKey?Hasher.HASH_LENGTH:0);
+    	int keyFilePosInBufferOutH = Hasher.HASH_LENGTH+(groupByKey?Hasher.HASH_LENGTH:0);
     	byte[] bufferOutH=new byte[keyFilePosInBufferOutH+KEY_POS_LENGTH];
+    	keyFilePosInBufferOutH += KEY_POS_LENGTH - 1;
    	
 		try {
 			sem.acquire();
@@ -109,19 +115,25 @@ class HashBuilder extends Thread {
 		  						dataLen=hasher[i].getHashAndData(arr[currPos+colOffset[i]],hashCol,0,data,dataPos,dataLength[i]);
 		  						mdHash.update(hashCol);
 		  					}
-		  					if(dataLen==Hasher.DATA_LEN_TO_RETURN_FOR_NULL){
-		  						data[dataPos++]=Hasher.DATA_LEN_TO_WRITE_FOR_NULL;
-		  					}else if(dataLen==Hasher.DATA_LEN_TO_RETURN_FOR_NO_COLUMN){
-		  						data[dataPos++]=Hasher.DATA_LEN_TO_WRITE_FOR_NO_COLUMN;
-		  					}else if(dataLen==Hasher.DATA_LEN_TO_RETURN_FOR_NO_SERIALIZER){
-		  						data[dataPos++]=Hasher.DATA_LEN_TO_WRITE_FOR_NO_SERIALIZER;
-		  					}else if(dataLen<=Hasher.DATA_LEN_VAL_MAX_FOR_1_BYTE){
-		  						data[dataPos++]=(byte)dataLen;
-		  						dataPos+=dataLen;
+		  					if(dataLen >= 0) {
+		  						if(dataLen<=Hasher.DATA_LEN_VAL_MAX_FOR_1_BYTE){
+		  							data[dataPos++]=(byte)dataLen;
+		  							dataPos+=dataLen;
+		  						}else{
+		  							data[dataPos++]=(byte)((dataLen>>8)|(1<<7));
+		  							data[dataPos++]=(byte)(dataLen);
+		  							dataPos+=dataLen;
+		  						}
 		  					}else{
-			  					data[dataPos++]=(byte)((dataLen>>8)|(1<<7));
-			  					data[dataPos++]=(byte)(dataLen);
-			  					dataPos+=dataLen;
+			  					if(dataLen==Hasher.DATA_LEN_TO_RETURN_FOR_NULL){
+			  						data[dataPos++]=Hasher.DATA_LEN_TO_WRITE_FOR_NULL;
+			  					}else if(dataLen==Hasher.DATA_LEN_TO_RETURN_FOR_NO_COLUMN){
+			  						data[dataPos++]=Hasher.DATA_LEN_TO_WRITE_FOR_NO_COLUMN;
+			  					}else if(dataLen==Hasher.DATA_LEN_TO_RETURN_FOR_NO_SERIALIZER){
+			  						data[dataPos++]=Hasher.DATA_LEN_TO_WRITE_FOR_NO_SERIALIZER;
+			  					}else{
+			  						throw new RuntimeException("Unknown dataLen value \""+dataLen+"\"");
+			  					}
 			  				}
 		  				}else{
 		  					hasher[i].getHash(arr[currPos+colOffset[i]],hashCol,0);
@@ -130,19 +142,25 @@ class HashBuilder extends Thread {
 		  			}else{
 		  				if(isKey[i]){
 		  					dataLen=hasher[i].getData(arr[currPos+colOffset[i]],data,dataPos,dataLength[i]);
-		  					if(dataLen==Hasher.DATA_LEN_TO_RETURN_FOR_NULL){
-		  						data[dataPos++]=Hasher.DATA_LEN_TO_WRITE_FOR_NULL;
-		  					}else if(dataLen==Hasher.DATA_LEN_TO_RETURN_FOR_NO_COLUMN){
-		  						data[dataPos++]=Hasher.DATA_LEN_TO_WRITE_FOR_NO_COLUMN;
-		  					}else if(dataLen==Hasher.DATA_LEN_TO_RETURN_FOR_NO_SERIALIZER){
-		  						data[dataPos++]=Hasher.DATA_LEN_TO_WRITE_FOR_NO_SERIALIZER;
-		  					}else if(dataLen<=Hasher.DATA_LEN_VAL_MAX_FOR_1_BYTE){
-		  						data[dataPos++]=(byte)dataLen;
-		  						dataPos+=dataLen;
+		  					if(dataLen >= 0) {
+		  						if(dataLen<=Hasher.DATA_LEN_VAL_MAX_FOR_1_BYTE){
+		  							data[dataPos++]=(byte)dataLen;
+		  							dataPos+=dataLen;
+		  						}else{
+		  							data[dataPos++]=(byte)((dataLen>>8)|(1<<7));
+		  							data[dataPos++]=(byte)(dataLen);
+		  							dataPos+=dataLen;
+		  						}
 		  					}else{
-			  					data[dataPos++]=(byte)((dataLen>>8)|(1<<7));
-			  					data[dataPos++]=(byte)(dataLen);
-			  					dataPos+=dataLen;
+			  					if(dataLen==Hasher.DATA_LEN_TO_RETURN_FOR_NULL){
+			  						data[dataPos++]=Hasher.DATA_LEN_TO_WRITE_FOR_NULL;
+			  					}else if(dataLen==Hasher.DATA_LEN_TO_RETURN_FOR_NO_COLUMN){
+			  						data[dataPos++]=Hasher.DATA_LEN_TO_WRITE_FOR_NO_COLUMN;
+			  					}else if(dataLen==Hasher.DATA_LEN_TO_RETURN_FOR_NO_SERIALIZER){
+			  						data[dataPos++]=Hasher.DATA_LEN_TO_WRITE_FOR_NO_SERIALIZER;
+			  					}else{
+				  					throw new RuntimeException("Unknown dataLen value \""+dataLen+"\"");
+			  					}
 			  				}
 		  				}
 		  			}
@@ -156,24 +174,31 @@ class HashBuilder extends Thread {
 	        		if(hashIsPresent){
 	        			mdHash.digest(bufferOutH,Hasher.HASH_LENGTH,Hasher.HASH_LENGTH);
 	        		}
-		        	bucket=Hasher.getHashBacket(bufferOutH,hashOutH.length);
+
 	        	}else{
         			mdHash.digest(bufferOutH,0,Hasher.HASH_LENGTH);
-        			bucket=Hasher.getHashBacket(bufferOutH,hashOutH.length);
 	        	}
+
+	        	bucket=(hashOutH.length==1?0:(((bufferOutH[0]&0x7f)<<24) | (bufferOutH[1]&0xff<<16) | (bufferOutH[2]&0xff<<8) | bufferOutH[3]&0xff)%hashOutH.length);
 	        	
-        		synchronized(keyFilePos[bucket]){
-        			keyFilePos_=keyFilePos[bucket].value;
-        			bufferOutH[keyFilePosInBufferOutH]=(byte)(keyFilePos_>>40);
-        			bufferOutH[keyFilePosInBufferOutH+1]=(byte)(keyFilePos_>>32);
-        			bufferOutH[keyFilePosInBufferOutH+2]=(byte)(keyFilePos_>>24);
-        			bufferOutH[keyFilePosInBufferOutH+3]=(byte)(keyFilePos_>>16);
-        			bufferOutH[keyFilePosInBufferOutH+4]=(byte)(keyFilePos_>>8);
-        			bufferOutH[keyFilePosInBufferOutH+5]=(byte)(keyFilePos_);
-    	        	hashOutH[bucket].write(bufferOutH);
+	        	long keyFilePos_;
+        		synchronized(hashOutK[bucket]){
+        			keyFilePos_ = keyFilePos[bucket].value;
 	        		hashOutK[bucket].write(data,0,dataPos);
 	        		keyFilePos[bucket].value+=dataPos;
 	        	}
+
+          		int keyFilePosInBufferOutH_ = keyFilePosInBufferOutH;
+          		bufferOutH[keyFilePosInBufferOutH_] = (byte)(keyFilePos_);
+		  		bufferOutH[--keyFilePosInBufferOutH_] = (byte)(keyFilePos_ >>= 8);
+    			bufferOutH[--keyFilePosInBufferOutH_] = (byte)(keyFilePos_ >>= 8);
+    			bufferOutH[--keyFilePosInBufferOutH_] = (byte)(keyFilePos_ >>= 8);
+    			bufferOutH[--keyFilePosInBufferOutH_] = (byte)(keyFilePos_ >>= 8);
+    			bufferOutH[--keyFilePosInBufferOutH_] = (byte)(keyFilePos_ >>=8);
+
+    			synchronized(hashOutH[bucket]){
+    				hashOutH[bucket].write(bufferOutH);
+          		}
 	        }
 		}catch(Exception e){
 	    	e.printStackTrace();

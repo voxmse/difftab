@@ -405,14 +405,17 @@ public class DiffTab {
 
 					// prepare data for comparison(sort+initial_load)
 					System.setProperty("java.util.concurrent.ForkJoinPool.common.parallelism", String.valueOf(getParallelDegree()));
-					for(int tableHashPartIdx = 0; tableHashPartIdx < tableHashParts; tableHashPartIdx++) cmps[tableHashPartIdx].prepare();
 
 					if(Action.valueOf(config.getAction())==Action.PREPARE_FILES_SORT) {
+						for(int tableHashPartIdx = 0; tableHashPartIdx < tableHashParts; tableHashPartIdx++) cmps[tableHashPartIdx].prepare(false);
+
 						for(String srcName : tabInfoTree.keySet())
 							createPreparedConfig(prepared.get(srcName),tabInfoTree.get(srcName).get(tabAlias),tableHashParts,Arrays.asList(cmps).stream().flatMap(cs -> cs.getChunkBoundaries(srcName).stream()).collect(Collectors.toList()));
 						diffWriter.close();
 						Files.delete(getLogFile(tabAlias).toPath());
 					} else {
+						for(int tableHashPartIdx = 0; tableHashPartIdx < tableHashParts; tableHashPartIdx++) cmps[tableHashPartIdx].prepare(tableHashPartIdx == 0);
+
 						// compare row hashes				
 						for(int tableHashPartIdx = 0; tableHashPartIdx < tableHashParts; tableHashPartIdx++) cmps[tableHashPartIdx].start();
 						while(true) {
