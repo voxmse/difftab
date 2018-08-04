@@ -1238,41 +1238,43 @@ public class HashComparator extends Thread {
 		}
 	}
 	
-	private synchronized void logDetection(char why,HashAggregator[] agg,boolean[] aggWithMin,byte[] keyBuff,StringBuilder keyBuffVal)throws Exception{
+	private void logDetection(char why,HashAggregator[] agg,boolean[] aggWithMin,byte[] keyBuff,StringBuilder keyBuffVal)throws Exception{
 		int i;
-		if(++detections.value<=loggedDetectionsMax) {
-			if(groupByKey) {
-				logWriter.append(why+logColumnSeparator);
-				for(i=0;i<agg.length;i++)
-					if(aggWithMin[i]) {
-						getKeyVal(keys[i],keyFile[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
-						logWriter.append(keyBuffVal.toString()+logColumnSeparator);
-						break;
+		synchronized(logWriter){
+			if(++detections.value<=loggedDetectionsMax) {
+				if(groupByKey) {
+					logWriter.append(why+logColumnSeparator);
+					for(i=0;i<agg.length;i++)
+						if(aggWithMin[i]) {
+							getKeyVal(keys[i],keyFile[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
+							logWriter.append(keyBuffVal.toString()+logColumnSeparator);
+							break;
+						}
+					for(i=0;i<agg.length;i++){
+						if(aggWithMin[i]) {
+							logWriter.append(agg[i].groupCntTotal+logColumnSeparator+String.valueOf(agg[i].dataHashId)+logColumnSeparator);
+						}else{
+							logWriter.append(logColumnSeparator+logColumnSeparator);
+						}
 					}
-				for(i=0;i<agg.length;i++){
-					if(aggWithMin[i]) {
-						logWriter.append(agg[i].groupCntTotal+logColumnSeparator+String.valueOf(agg[i].dataHashId)+logColumnSeparator);
-					}else{
-						logWriter.append(logColumnSeparator+logColumnSeparator);
-					}
+				}else{
+					logWriter.append(why+logColumnSeparator);
+					for(i=0;i<agg.length;i++)
+						if(aggWithMin[i]){
+							getKeyVal(keys[i],keyFile[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
+							logWriter.append(
+								keyBuffVal.toString()+
+								logColumnSeparator+
+								agg[i].groupCntTotal+
+								logColumnSeparator
+							);
+						}else{
+							logWriter.append(logColumnSeparator+logColumnSeparator);
+						}
 				}
-			}else{
-				logWriter.append(why+logColumnSeparator);
-				for(i=0;i<agg.length;i++)
-					if(aggWithMin[i]){
-						getKeyVal(keys[i],keyFile[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
-						logWriter.append(
-							keyBuffVal.toString()+
-							logColumnSeparator+
-							agg[i].groupCntTotal+
-							logColumnSeparator
-						);
-					}else{
-						logWriter.append(logColumnSeparator+logColumnSeparator);
-					}
 			}
+			logWriter.newLine();
 		}
-		logWriter.newLine();
 	}
     
 	private void getKeyVal(int keys,File keyFile,long offset,byte[] buff,StringBuilder keyVal)throws Exception{
