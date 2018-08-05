@@ -1240,40 +1240,44 @@ public class HashComparator extends Thread {
 	
 	private void logDetection(char why,HashAggregator[] agg,boolean[] aggWithMin,byte[] keyBuff,StringBuilder keyBuffVal)throws Exception{
 		int i;
-		synchronized(logWriter){
-			if(++detections.value<=loggedDetectionsMax) {
-				if(groupByKey) {
-					logWriter.append(why+logColumnSeparator);
-					for(i=0;i<agg.length;i++)
-						if(aggWithMin[i]) {
-							getKeyVal(keys[i],keyFile[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
-							logWriter.append(keyBuffVal.toString()+logColumnSeparator);
-							break;
-						}
-					for(i=0;i<agg.length;i++){
-						if(aggWithMin[i]) {
-							logWriter.append(agg[i].groupCntTotal+logColumnSeparator+String.valueOf(agg[i].dataHashId)+logColumnSeparator);
-						}else{
-							logWriter.append(logColumnSeparator+logColumnSeparator);
-						}
+		StringBuilder dataToWrite = new StringBuilder();
+		
+		if(++detections.value<=loggedDetectionsMax) {
+			if(groupByKey) {
+				dataToWrite.append(why+logColumnSeparator);
+				for(i=0;i<agg.length;i++)
+					if(aggWithMin[i]) {
+						getKeyVal(keys[i],keyFile[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
+						dataToWrite.append(keyBuffVal.toString()+logColumnSeparator);
+						break;
 					}
-				}else{
-					logWriter.append(why+logColumnSeparator);
-					for(i=0;i<agg.length;i++)
-						if(aggWithMin[i]){
-							getKeyVal(keys[i],keyFile[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
-							logWriter.append(
-								keyBuffVal.toString()+
-								logColumnSeparator+
-								agg[i].groupCntTotal+
-								logColumnSeparator
-							);
-						}else{
-							logWriter.append(logColumnSeparator+logColumnSeparator);
-						}
+				for(i=0;i<agg.length;i++){
+					if(aggWithMin[i]) {
+						dataToWrite.append(agg[i].groupCntTotal+logColumnSeparator+String.valueOf(agg[i].dataHashId)+logColumnSeparator);
+					}else{
+						dataToWrite.append(logColumnSeparator+logColumnSeparator);
+					}
 				}
+			}else{
+				dataToWrite.append(why+logColumnSeparator);
+				for(i=0;i<agg.length;i++)
+					if(aggWithMin[i]){
+						getKeyVal(keys[i],keyFile[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
+						dataToWrite.append(
+							keyBuffVal.toString()+
+							logColumnSeparator+
+							agg[i].groupCntTotal+
+							logColumnSeparator
+						);
+					}else{
+						dataToWrite.append(logColumnSeparator+logColumnSeparator);
+					}
 			}
-			logWriter.newLine();
+		}
+		dataToWrite.append(System.lineSeparator());
+		
+		synchronized(logWriter){
+			logWriter.append(dataToWrite);
 		}
 	}
     
