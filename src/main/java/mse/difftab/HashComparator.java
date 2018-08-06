@@ -29,6 +29,8 @@ public class HashComparator extends Thread {
     private String tabAlias;
     private File[] hashFile;
 	private File[] keyFile;
+	private RandomAccessFile[] hashFileRAF;
+	private RandomAccessFile[] keyFileRAF;
 	private boolean groupByKey;
 	private Map<String,Map<String,TabInfo>> tabInfoTree;
 	private BufferedWriter logWriter;
@@ -131,7 +133,7 @@ public class HashComparator extends Thread {
 				app.writeLog("sort:"+srcName[srcIdx]+"."+tablePartIdx+":sort is started:");
 				lastTs=System.currentTimeMillis();
 				for(int i=chunk.length-1;i>=0;i--){
-					loadHash(hashFile[srcIdx],chunk[i].head,(int)(chunk[i].tail-chunk[i].head+1),sortBuffer[0],0);
+					loadHash(hashFileRAF[srcIdx],chunk[i].head,(int)(chunk[i].tail-chunk[i].head+1),sortBuffer[0],0);
 					parallelSort(sortBuffer[0],(int)(chunk[i].tail-chunk[i].head+1),sortBuffer[1]);
 					saveHash(hashFile[srcIdx],chunk[i].head,(int)(chunk[i].tail-chunk[i].head+1),sortBuffer[0]);
 					sortTrace(i);
@@ -194,7 +196,7 @@ public class HashComparator extends Thread {
 			hashRecCnt[partIdx]=1;
 			hashRecIdx[partIdx]=0;
 			hashRecIdxMax[partIdx]=loadHash(
-				hashFile[srcIdx],
+				hashFileRAF[srcIdx],
 				chunk[partIdx].head,
 				(int)Math.min(
 					chunk[partIdx].tail-chunk[partIdx].head+1,
@@ -874,7 +876,7 @@ public class HashComparator extends Thread {
 					hashRecIdx[partIdx]=0;
 					chunk[partIdx].head+=(hashRecIdxMax[partIdx]+1);
 					hashRecIdxMax[partIdx]=loadHash(
-						hashFile[srcIdx],
+						hashFileRAF[srcIdx],
 						chunk[partIdx].head,
 						(int)Math.min(
 							chunk[partIdx].tail-chunk[partIdx].head+1,
@@ -907,7 +909,7 @@ public class HashComparator extends Thread {
 				hashRecIdx[partIdx]=0;
 				chunk[partIdx].head+=hashRecIdxMax[partIdx];
 				hashRecIdxMax[partIdx]=loadHash(
-					hashFile[srcIdx],
+					hashFileRAF[srcIdx],
 					chunk[partIdx].head+1,
 					(int)Math.min(
 						chunk[partIdx].tail-chunk[partIdx].head,
@@ -922,21 +924,15 @@ public class HashComparator extends Thread {
 			readNext(partIdx,true);
 		}
 		
-		private int loadHash(File hashFile,long offset,int hashes,byte[] ha,int haOffset)throws Exception{
-			RandomAccessFile f=null;
-			try{
-				f=new RandomAccessFile(hashFile,"r");
-				f.seek(offset*HASH_RECORD_SIZE);
-				return f.read(ha,haOffset*HASH_RECORD_SIZE,hashes*HASH_RECORD_SIZE)/HASH_RECORD_SIZE;
-			}finally{
-				try{f.close();}catch(Exception e){}
-			}
+		private int loadHash(RandomAccessFile hashFileRAF,long offset,int hashes,byte[] ha,int haOffset)throws Exception{
+			hashFileRAF.seek(offset*HASH_RECORD_SIZE);
+			return hashFileRAF.read(ha,haOffset*HASH_RECORD_SIZE,hashes*HASH_RECORD_SIZE)/HASH_RECORD_SIZE;
 		}
 		
 		private void saveHash(File hashFile,long offset,int hashes,byte[] ha_)throws Exception{
 			RandomAccessFile f=null;
 			try{
-				f=new RandomAccessFile(hashFile,"rwd");
+				f=new RandomAccessFile(hashFile,"rws");
 				f.seek(offset*HASH_RECORD_SIZE);
 				f.write(ha_,0,hashes*HASH_RECORD_SIZE);
 				f.getFD().sync();
@@ -972,6 +968,8 @@ public class HashComparator extends Thread {
 		this.srcName=new String[tabInfoTree.size()];
 		this.hashFile=new File[tabInfoTree.size()];
 		this.keyFile=new File[tabInfoTree.size()];
+		this.hashFileRAF = new RandomAccessFile[tabInfoTree.size()];
+		this.keyFileRAF = new RandomAccessFile[tabInfoTree.size()];
 		this.tabInfoTree=tabInfoTree;
 		this.compareDistinct = compareDistinct;
 		this.logMatched = logMatched;
@@ -982,6 +980,8 @@ public class HashComparator extends Thread {
 			this.srcName[i]=s;
 			this.hashFile[i]=hashFile.get(s);
 			this.keyFile[i]=keyFile.get(s);
+			this.hashFileRAF[i] = new RandomAccessFile(this.hashFile[i], "r");
+			this.keyFileRAF[i] = new RandomAccessFile(this.keyFile[i], "r");
 			i++;
 		}
 		this.groupByKey = tabInfoTree.get(srcName[0]).get(tabAlias).groupByKey; 
@@ -1015,6 +1015,11 @@ public class HashComparator extends Thread {
 //	    	e.printStackTrace();
 	    	app.logError("compare fatal error:"+srcName+"."+tablePartIdx+":"+e.getMessage());
 	    	app.registerFailure(new RuntimeException("compare fatal error:"+srcName+"."+tablePartIdx+":"+e.getMessage(),e));
+		}finally{
+			for(int i=0;i<hashFileRAF.length;i++){
+				try {hashFileRAF[i].close();}catch(Exception e){}
+				try {keyFileRAF[i].close();}catch(Exception e){}
+			}
 		}
 	}
 	
@@ -1247,7 +1252,7 @@ public class HashComparator extends Thread {
 				dataToWrite.append(why+logColumnSeparator);
 				for(i=0;i<agg.length;i++)
 					if(aggWithMin[i]) {
-						getKeyVal(keys[i],keyFile[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
+						getKeyVal(keys[i],keyFileRAF[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
 						dataToWrite.append(keyBuffVal.toString()+logColumnSeparator);
 						break;
 					}
@@ -1262,7 +1267,7 @@ public class HashComparator extends Thread {
 				dataToWrite.append(why+logColumnSeparator);
 				for(i=0;i<agg.length;i++)
 					if(aggWithMin[i]){
-						getKeyVal(keys[i],keyFile[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
+						getKeyVal(keys[i],keyFileRAF[i],agg[i].keyValOffset,keyBuff,keyBuffVal); 
 						dataToWrite.append(
 							keyBuffVal.toString()+
 							logColumnSeparator+
@@ -1281,15 +1286,9 @@ public class HashComparator extends Thread {
 		}
 	}
     
-	private void getKeyVal(int keys,File keyFile,long offset,byte[] buff,StringBuilder keyVal)throws Exception{
-		RandomAccessFile f=null;
-		try{
-			f=new RandomAccessFile(keyFile,"rw");
-			f.seek(offset);
-			f.read(buff,0,buff.length);
-		}finally{
-			try{f.close();}catch(Exception e){}
-		}
+	private void getKeyVal(int keys,RandomAccessFile keyFile,long offset,byte[] buff,StringBuilder keyVal)throws Exception{
+		keyFile.seek(offset);
+		keyFile.read(buff,0,buff.length);
 		keyVal.setLength(0);
 		int pos=0;
 		for(int i=0;i<keys;i++){
